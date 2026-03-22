@@ -4,6 +4,26 @@ import { cookies } from "next/headers"
 const API_URL = process.env.API_URL || "http://localhost:8000"
 
 export async function POST(request: NextRequest) {
+  // Check if ML service is available in production
+  const isProduction = process.env.NODE_ENV === 'production'
+  const apiUrl = API_URL || ''
+  const mlDisabled =
+    apiUrl === "disabled" ||
+    !apiUrl ||
+    (apiUrl.includes('localhost') && isProduction) ||
+    (apiUrl.includes('127.0.0.1') && isProduction)
+
+  if (mlDisabled) {
+    return NextResponse.json(
+      {
+        error: "ML prediction service is temporarily unavailable",
+        message: "This feature requires the FastAPI backend service. Please contact support.",
+        status: "disabled"
+      },
+      { status: 503 }
+    )
+  }
+
   try {
     // Correctly access cookies in a Route Handler
     const cookieStore = await cookies()

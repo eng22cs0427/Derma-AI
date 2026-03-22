@@ -367,6 +367,112 @@ Per-Class Performance:
 └── Vascular Lesions (vasc): Precision=89.7%, Recall=88.3%
 ```
 
+## 🔧 Production Deployment (Vercel)
+
+### Prerequisites
+✅ Supabase account with project created
+✅ AWS S3 bucket configured (`derma-ai-storage`)
+✅ Vercel account connected to this repository
+
+### Step 1: Set Environment Variables in Vercel
+
+See `.env.production.example` for the complete list of required variables.
+
+**Go to:** Vercel Dashboard → Your Project → Settings → Environment Variables
+
+#### Required Variables (Authentication - CRITICAL):
+
+| Variable | Value | Environment |
+|----------|-------|-------------|
+| `NEXT_PUBLIC_SUPABASE_URL` | `https://icjbczsoentdduajweeo.supabase.co` | Production ✓ |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Your Supabase anon key | Production ✓ |
+| `NEXT_PUBLIC_APP_URL` | `https://YOUR-DOMAIN.vercel.app | Production ✓ |
+| `NEXT_PUBLIC_SITE_URL` | `https://YOUR-DOMAIN.vercel.app` | Production ✓ |
+| `NODE_ENV` | `production` | Production ✓ |
+
+#### AWS S3 Variables (File Uploads):
+
+| Variable | Value | Notes |
+|----------|-------|-------|
+| `AWS_ACCESS_KEY_ID` | Your AWS access key | Rotate after setup! |
+| `AWS_SECRET_ACCESS_KEY` | Your AWS secret | Rotate after setup! |
+| `AWS_S3_BUCKET` | `derma-ai-storage` | - |
+| `NEXT_PUBLIC_AWS_S3_BUCKET` | `derma-ai-storage` | - |
+| `NEXT_PUBLIC_S3_REGION` | `ap-south-1` | - |
+| `NEXT_PUBLIC_AWS_REGION` | `ap-south-1` | - |
+
+#### Optional Services (Disable until ready):
+
+| Variable | Value | Notes |
+|----------|-------|-------|
+| `API_URL` | `disabled` | Enable when FastAPI deployed |
+| `ENABLE_ML_PREDICTIONS` | `false` | Enable when FastAPI deployed |
+| `ENABLE_PAYMENTS` | `false` | Enable when Stripe configured |
+
+### Step 2: Deploy
+
+```bash
+git push origin main
+```
+
+Vercel will automatically build and deploy.
+
+### Step 3: Verify Deployment
+
+Test your production site:
+
+1. **Homepage** - Visit `https://your-app.vercel.app` (should load without 500 error)
+2. **Register** - Create a new account at `/register`
+3. **Login** - Login at `/login`
+4. **Dashboard** - Access `/dashboard` (should be protected)
+5. **Logout** - Test logout functionality
+6. **Health Check** - Visit `/api/health` to check service status
+
+### Troubleshooting Production Issues
+
+#### 500 Error on Any Page
+```bash
+# Check Vercel deployment logs
+vercel logs --follow
+
+# Common causes:
+- Missing NEXT_PUBLIC_SUPABASE_URL in Vercel environment variables
+- Missing NEXT_PUBLIC_SUPABASE_ANON_KEY in Vercel environment variables
+- Build configuration errors
+```
+
+**Fix:** Add Supabase credentials in Vercel Dashboard → Settings → Environment Variables
+
+#### Can't Login/Register
+- ✅ Verify `NEXT_PUBLIC_SUPABASE_URL` is set in Vercel
+- ✅ Verify `NEXT_PUBLIC_SUPABASE_ANON_KEY` is set in Vercel
+- ✅ Check Supabase dashboard for service status
+- ✅ Check browser console for CORS errors
+
+#### ML Predictions Return 503
+- **Expected** if `ENABLE_ML_PREDICTIONS=false`
+- Deploy FastAPI backend to enable feature
+- Update `API_URL` environment variable
+
+#### File Uploads Fail
+- Verify AWS credentials are set in Vercel
+- Check S3 bucket permissions
+- Verify bucket name matches `derma-ai-storage`
+- Ensure IAM user has S3 PutObject permissions
+
+### Post-Deployment Security Checklist
+
+After your first successful deployment:
+
+- [ ] Rotate AWS credentials (see Phase 2 in deployment plan)
+- [ ] Enable Supabase email verification (optional)
+- [ ] Set up error monitoring (Sentry, LogRocket)
+- [ ] Configure domain and SSL certificate
+- [ ] Set up Google Analytics or other monitoring
+- [ ] Review and update CORS settings
+
+---
+
 ## 📱 Installation & Setup
 
 ### Prerequisites
