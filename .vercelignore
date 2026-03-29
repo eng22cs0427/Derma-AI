@@ -1,0 +1,6 @@
+# Ignore the heavy Python ML backend folder from Vercel's build phase
+# Vercel serverless functions have a 500MB limit, making heavy ML models impossible to deploy there natively.
+# This API should be deployed separately (e.g. AWS EC2, Render)
+/api
+/scripts
+/database
