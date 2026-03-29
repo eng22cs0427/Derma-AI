@@ -7,7 +7,6 @@ import {
   Activity,
   Calendar,
   ChevronRight,
-  FileText,
   Home,
   Menu,
   Settings,
@@ -15,6 +14,7 @@ import {
   User,
   Users,
   Microscope,
+  ShieldCheck,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -42,34 +42,20 @@ const menuItems = [
   //   icon: Activity,
     // href: "/dashboard/treatment",
   // },
-  {
-    title: "Community & Resources",
-    icon: Users,
-    href: "/dashboard/community",
-  },
+
   {
     title: "Medical Shop",
     icon: ShoppingBag,
     href: "/dashboard/shop",
   },
   {
-    title: "Medical History",
-    icon: FileText,
-    href: "/dashboard/medical-history",
-  },
-  {
     title: "Profile",
     icon: User,
     href: "/dashboard/profile",
   },
-  {
-    title: "Settings",
-    icon: Settings,
-    href: "/dashboard/settings",
-  },
 ]
 
-export function DashboardSidebar() {
+export function DashboardSidebar({ isAdmin = false }: { isAdmin?: boolean }) {
   const pathname = usePathname()
   const [isOpen, setIsOpen] = useState(false)
 
@@ -92,6 +78,16 @@ export function DashboardSidebar() {
           </Link>
         )
       })}
+      
+      {/* Admin Panel Link — visible ONLY to the specific admin email */}
+      {isAdmin && (
+        <Link href="/admin/doctors">
+          <div className="mt-6 flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-bold text-purple-700 bg-purple-100 hover:bg-purple-200 dark:bg-purple-900/40 dark:text-purple-300 dark:hover:bg-purple-900/60 shadow-sm border border-purple-200 dark:border-purple-800">
+            <ShieldCheck className="h-4 w-4" />
+            <span>Admin Panel</span>
+          </div>
+        </Link>
+      )}
     </nav>
   )
 

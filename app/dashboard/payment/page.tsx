@@ -200,7 +200,13 @@ export default function PaymentPage() {
   const form = useForm<z.infer<typeof paymentSchema>>({
     resolver: zodResolver(paymentSchema),
     defaultValues: {
-      paymentMethod: "card",
+      paymentMethod: "cod",
+      cardNumber: "",
+      expiryDate: "",
+      cvv: "",
+      cardholderName: "",
+      upiId: "",
+      bankName: "",
     },
   })
 
@@ -238,12 +244,44 @@ export default function PaymentPage() {
 
       setOrderData(newOrderData)
 
-      // Save order data to localStorage
+      // Save order to AWS RDS + medical history in parallel
       try {
-        localStorage.setItem("currentOrder", JSON.stringify(newOrderData))
-        console.log("Order data saved to localStorage:", newOrderData)
-      } catch (storageError) {
-        console.error("Error saving to localStorage:", storageError)
+        const orderNumber = newOrderData.orderId
+        const [orderRes] = await Promise.all([
+          fetch('/api/orders', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              orderNumber,
+              items: cartItems,
+              subtotal,
+              tax,
+              shippingCost: shipping,
+              totalAmount: total,
+              paymentMethod: values.paymentMethod,
+              deliveryAddress,
+            }),
+          }),
+          fetch('/api/medical-history', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'Medicine',
+              data: `Medicine Ordered — ₹${total.toFixed(2)}`,
+              details: {
+                Order_ID: orderNumber,
+                Items_Purchased: cartItems.map((i: any) => `${i.name} (Qty: ${i.quantity})`).join(', '),
+                Payment_Method: values.paymentMethod === 'cod' ? 'Cash on Delivery' : 'Secure Online Payment',
+                Payment_Status: values.paymentMethod === 'cod' ? 'Pending (Pay on Delivery)' : 'Paid Successfully',
+                Delivery_Address: deliveryAddress ? `${deliveryAddress.address}, ${deliveryAddress.city}, ${deliveryAddress.state} - ${deliveryAddress.pincode}` : 'Available in My Orders',
+                Contact_Number: deliveryAddress ? deliveryAddress.phone : 'N/A',
+              },
+            }),
+          }),
+        ])
+        if (!orderRes.ok) console.error('Failed to save order to DB')
+      } catch (dbError) {
+        console.error('Failed to persist order:', dbError)
       }
 
       // Clear cart and delivery address
@@ -476,30 +514,9 @@ export default function PaymentPage() {
                         <RadioGroup
                           onValueChange={field.onChange}
                           defaultValue={field.value}
-                          className="grid grid-cols-2 gap-4"
+                          className="grid grid-cols-1 gap-4"
                         >
-                          <div className="flex items-center space-x-2 border rounded-lg p-4 hover:bg-accent cursor-pointer">
-                            <RadioGroupItem value="card" id="card" />
-                            <label htmlFor="card" className="flex items-center gap-2 cursor-pointer flex-1">
-                              <CreditCard className="h-4 w-4" />
-                              <span>Credit/Debit Card</span>
-                            </label>
-                          </div>
-                          <div className="flex items-center space-x-2 border rounded-lg p-4 hover:bg-accent cursor-pointer">
-                            <RadioGroupItem value="upi" id="upi" />
-                            <label htmlFor="upi" className="flex items-center gap-2 cursor-pointer flex-1">
-                              <Wallet className="h-4 w-4" />
-                              <span>UPI</span>
-                            </label>
-                          </div>
-                          <div className="flex items-center space-x-2 border rounded-lg p-4 hover:bg-accent cursor-pointer">
-                            <RadioGroupItem value="netbanking" id="netbanking" />
-                            <label htmlFor="netbanking" className="flex items-center gap-2 cursor-pointer flex-1">
-                              <Building className="h-4 w-4" />
-                              <span>Net Banking</span>
-                            </label>
-                          </div>
-                          <div className="flex items-center space-x-2 border rounded-lg p-4 hover:bg-accent cursor-pointer">
+                          <div className="flex items-center space-x-2 border-2 border-primary rounded-lg p-4 bg-accent cursor-pointer">
                             <RadioGroupItem value="cod" id="cod" />
                             <label htmlFor="cod" className="flex items-center gap-2 cursor-pointer flex-1">
                               <Truck className="h-4 w-4" />

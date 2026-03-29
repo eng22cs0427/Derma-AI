@@ -5,7 +5,6 @@ import Link from "next/link"
 import {
   Activity,
   Calendar,
-  FileText,
   ShoppingBag,
   User,
   Users,
@@ -17,6 +16,7 @@ import {
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { useProfile } from "@/contexts/ProfileContext"
 
 // Banner data for the carousel
 const banners = [
@@ -80,14 +80,7 @@ const features = [
     //   color: "bg-red-100",
     //   iconColor: "text-red-500",
     // },
-    {
-      title: "Community & Resources",
-      description: "Connect with others and access educational resources",
-      icon: Users,
-      href: "/dashboard/community",
-      color: "bg-yellow-100",
-      iconColor: "text-yellow-500",
-    },
+
     {
       title: "Medical Shop",
       description: "Purchase recommended medical supplies and products",
@@ -95,14 +88,6 @@ const features = [
       href: "/dashboard/shop",
       color: "bg-pink-100",
       iconColor: "text-pink-500",
-    },
-    {
-      title: "Medical History",
-      description: "View your complete medical records and history",
-      icon: FileText,
-      href: "/dashboard/medical-history",
-      color: "bg-indigo-100",
-      iconColor: "text-indigo-500",
     },
     {
       title: "Profile & Settings",
@@ -132,12 +117,34 @@ export default function DashboardPage() {
     return () => clearInterval(timer)
   }, [])
 
+  const { profile } = useProfile()
+  const firstName = profile?.fullName?.split(' ')[0] || ""
+  
+  const hour = new Date().getHours()
+  const greeting = hour < 12 ? "Good Morning" : hour < 18 ? "Good Afternoon" : "Good Evening"
+
   return (
     <div className="space-y-8">
       {/* Welcome Section */}
-      <div>
-        <h1 className="text-4xl font-bold tracking-tight">Welcome to  DermaAI</h1>
-        <p className="text-xl text-muted-foreground">Your comprehensive skin condition management platform</p>
+      <div className="relative bg-gradient-to-br from-emerald-600 via-teal-500 to-cyan-600 rounded-3xl p-8 sm:p-10 text-white shadow-xl overflow-hidden border border-emerald-400">
+        <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none transform translate-x-1/4 -translate-y-1/4">
+          <Activity className="w-72 h-72" />
+        </div>
+        <div className="relative z-10 space-y-3">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/20 backdrop-blur-md text-sm font-medium border border-white/30 text-white shadow-sm mb-2">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
+            </span>
+            
+          </div>
+          <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight drop-shadow-md">
+            {greeting}{firstName ? `, ${firstName}` : "!"} 
+          </h1>
+          <p className="text-lg sm:text-xl text-white/90 max-w-2xl font-medium drop-shadow-sm">
+            Welcome to your personalized DermaAI hub. Let's take care of your skin health today.
+          </p>
+        </div>
       </div>
 
      {/* Feature Banner Carousel */}

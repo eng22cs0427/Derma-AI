@@ -402,17 +402,47 @@ ON CONFLICT (id) DO NOTHING;
 -- CREATE USER dermasense_app WITH PASSWORD 'secure_password_here';
 -- GRANT CONNECT ON DATABASE dermasense_db TO dermasense_app;
 -- GRANT USAGE ON SCHEMA public TO dermasense_app;
--- GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO dermasense_app;
--- GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO dermasense_app;
+-- Grants
+-- Note: Replace with actual Postgres roles if different
+-- GRANT ALL ON ALL TABLES IN SCHEMA public TO postgres;
+-- GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO postgres;
+
+-- ============================================================================
+-- TABLE: orders
+-- ============================================================================
+-- Stores medical shop orders linked to User Profiles via Clerk ID
+
+CREATE TABLE IF NOT EXISTS orders (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    order_number VARCHAR(100) UNIQUE NOT NULL,
+    user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    items JSONB NOT NULL DEFAULT '[]',
+    subtotal DECIMAL(12,2) NOT NULL DEFAULT 0,
+    tax DECIMAL(12,2) NOT NULL DEFAULT 0,
+    shipping_cost DECIMAL(12,2) NOT NULL DEFAULT 0,
+    total_amount DECIMAL(12,2) NOT NULL DEFAULT 0,
+    payment_method VARCHAR(50) DEFAULT 'Credit Card',
+    payment_status VARCHAR(50) DEFAULT 'Paid',
+    order_status VARCHAR(50) DEFAULT 'Confirmed',
+    delivery_address JSONB DEFAULT '{}',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id);
+CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_orders_order_number ON orders(order_number);
+
+COMMENT ON TABLE orders IS 'Stores medical shop orders linked to users';
 
 -- ============================================================================
 -- MAINTENANCE
 -- ============================================================================
 
--- Vacuum and analyze tables for optimal performance
-VACUUM ANALYZE;
-
 -- Display table sizes
+-- Note: VACUUM ANALYZE cannot run inside a transaction block.
+-- PostgreSQL's autovacuum daemon handles this automatically.
+-- To run manually, open a separate query window and execute: VACUUM ANALYZE;
 SELECT 
     schemaname,
     tablename,

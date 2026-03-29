@@ -1,65 +1,90 @@
-import type React from "react";
-import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+import type React from "react"
+import { redirect } from "next/navigation"
+import { currentUser } from "@clerk/nextjs/server"
 
-import { DashboardHeader } from "@/components/dashboard/header";
-import { DashboardSidebar } from "@/components/dashboard/sidebar";
-import { decodeJwtPayload } from "@/lib/jwt";
-
-type CustomUser = {
-  id: string;
-  email: string;
-  user_metadata: {
-    avatar_url: string;
-    [key: string]: unknown;
-  };
-};
+import { DashboardHeader } from "@/components/dashboard/header"
+import { DashboardSidebar } from "@/components/dashboard/sidebar"
+import { ensureUserProfileExists } from "@/lib/profile-sync"
+import { ProfileProvider } from "@/contexts/ProfileContext"
 
 export default async function DashboardLayout({
   children,
 }: {
-  children: React.ReactNode;
+  children: React.ReactNode
 }) {
-  const cookieStore = await cookies();
-  const accessToken =
-    cookieStore.get('sb-access-token')?.value ||
-    cookieStore.get('accessToken')?.value;
+  const user = await currentUser()
 
-  let user: CustomUser | null = null;
+  if (!user) {
+    redirect("/login")
+  }
 
-  if (accessToken) {
-    try {
-      const payload = decodeJwtPayload(accessToken);
-      if (!payload || typeof payload.sub !== 'string' || payload.sub.length === 0) {
-        throw new Error('Invalid access token');
-      }
+  // Retrieve basic info from Clerk profile
+  const primaryEmail = user.emailAddresses?.find(
+    (e) => e.id === user.primaryEmailAddressId
+  )?.emailAddress || user.emailAddresses?.[0]?.emailAddress || "no-email@example.com"
 
-      const userId = payload.sub;
-      const email = typeof payload.email === 'string' ? payload.email : '';
+  const fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || primaryEmail.split('@')[0]
 
-      user = {
-        id: userId,
-        email,
-        user_metadata: {
-          avatar_url: '',
-        },
-      };
-    } catch (error) {
-      console.error('Failed to get user:', error);
+  let isOnboarded = false
+  let userRole = 'patient'
+
+  try {
+    // Race the DB call against a 6-second timeout (DB timeout is 5s, plus buffer)
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("DB profile sync timed out after 6s")), 6000)
+    )
+    const dbProfile = await Promise.race([
+      ensureUserProfileExists(user.id, primaryEmail, fullName),
+      timeout,
+    ])
+    isOnboarded = Boolean(dbProfile.isOnboarded)
+    userRole = dbProfile.role || 'patient'
+  } catch (error) {
+    const msg = (error as Error)?.message ?? ""
+    const code = (error as any)?.code ?? ""
+    const isTimeout =
+      code === 'ETIMEDOUT' ||
+      msg.toLowerCase().includes('etimedout') ||
+      msg.includes("timed out") ||
+      msg.includes("timeout") ||
+      msg.includes("Connection terminated")
+    if (isTimeout) {
+      console.warn("[Dashboard Layout] RDS timeout — treating user as onboarded for graceful degradation:", msg || code)
+      isOnboarded = true
+      // On timeout we can't determine role — default to patient (safe fallback)
+      userRole = 'patient'
+    } else {
+      console.error("[Dashboard Layout] Profile sync error:", error)
     }
   }
 
-  if (!user) {
-    redirect('/login');
+  // ── Role-based routing ─────────────────────────────────────────────────────
+  // If the admin has promoted this user to doctor, send them to their dashboard.
+  // This handles the case where a patient account is later promoted to doctor.
+  if (userRole === 'doctor') {
+    redirect("/doctor-dashboard")
+  }
+
+  // ── Onboarding gate ────────────────────────────────────────────────────────
+  if (!isOnboarded) {
+    redirect("/onboarding")
   }
 
   return (
     <div className="min-h-screen bg-background">
-      <DashboardSidebar />
+      <DashboardSidebar isAdmin={primaryEmail === "sabareeshsp7@gmail.com"} />
       <div className="lg:pl-64">
-        <DashboardHeader user={user} />
-        <main className="container py-6">{children}</main>
+        <DashboardHeader user={{
+          id: user.id,
+          firstName: user.firstName ?? null,
+          lastName: user.lastName ?? null,
+          email: primaryEmail,
+          imageUrl: user.imageUrl ?? null,
+        }} />
+        <ProfileProvider>
+          <main className="container py-6">{children}</main>
+        </ProfileProvider>
       </div>
     </div>
-  );
+  )
 }

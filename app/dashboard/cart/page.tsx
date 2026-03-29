@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import { toast } from "sonner"
 import { useCart } from "@/contexts/cart-context"
+import { useProfile } from "@/contexts/ProfileContext"
 
 // Dynamically import the Map component to avoid SSR issues with Leaflet
 const AddressMap = dynamic(() => import("@/components/shop/address-map"), {
@@ -70,15 +71,31 @@ export default function CartPage() {
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      name: deliveryAddress?.name || "",
-      email: deliveryAddress?.email || "",
-      phone: deliveryAddress?.phone || "",
-      address: deliveryAddress?.address || "",
-      city: deliveryAddress?.city || "",
-      state: deliveryAddress?.state || "",
-      pincode: deliveryAddress?.pincode || "",
+      name: "",
+      email: "",
+      phone: "",
+      address: "",
+      city: "",
+      state: "",
+      pincode: "",
     },
   })
+
+  // Auto-fill form from user profile
+  const { profile } = useProfile()
+  useEffect(() => {
+    if (profile) {
+      form.reset({
+        name: profile.fullName || "",
+        email: profile.email || "",
+        phone: profile.contactNumber || "",
+        address: profile.address || "",
+        city: profile.city || "",
+        state: profile.state || "",
+        pincode: profile.postalCode || "",
+      })
+    }
+  }, [profile, form])
 
   useEffect(() => {
     if (deliveryAddress) {

@@ -1,42 +1,25 @@
-import { NextResponse } from "next/server"
-import type { NextRequest } from "next/server"
+import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
+import { NextResponse } from 'next/server'
 
-import { hasValidJwtExpiry } from "@/lib/jwt"
+// Protect both patient and doctor routes
+const isProtectedRoute = createRouteMatcher([
+  '/dashboard(.*)', 
+  '/onboarding(.*)',
+  '/doctor-dashboard(.*)'
+])
 
-export async function middleware(req: NextRequest) {
-  const { pathname } = req.nextUrl
-
-  // Only protect dashboard routes
-  if (!pathname.startsWith("/dashboard")) {
-    return NextResponse.next()
+export default clerkMiddleware(async (auth, req) => {
+  if (isProtectedRoute(req)) {
+    await auth.protect()
   }
-
-  // Get access token from cookies
-  const accessToken =
-    req.cookies.get('sb-access-token')?.value ||
-    req.cookies.get('accessToken')?.value
-
-  // Validate token
-  if (!hasValidJwtExpiry(accessToken)) {
-    const redirectUrl = req.nextUrl.clone()
-    redirectUrl.pathname = "/login"
-    redirectUrl.searchParams.set("redirectedFrom", pathname)
-
-    // Clear invalid cookies
-    const response = NextResponse.redirect(redirectUrl)
-    response.cookies.delete('sb-access-token')
-    response.cookies.delete('sb-refresh-token')
-    response.cookies.delete('accessToken')
-
-    return response
-  }
-
   return NextResponse.next()
-}
+})
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|api|login|register).*)",
+    // Skip Next.js internals and all static files, unless found in search params
+    '/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)',
+    // Always run for API routes
+    '/(api|trpc)(.*)',
   ],
 }
-

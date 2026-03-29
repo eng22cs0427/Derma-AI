@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { Search, ShoppingCart, Grid3X3, List, Filter, Heart } from "lucide-react"
+import { Search, ShoppingCart, Grid3X3, List, Filter, Heart, ReceiptText } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -99,7 +99,11 @@ export default function ShopPage() {
           <h1 className="text-3xl font-bold tracking-tight">Medical Shop</h1>
           <p className="text-muted-foreground">Browse our selection of medical products and supplies</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          <Button variant="outline" size="sm" onClick={() => router.push("/dashboard/orders")} className="flex items-center gap-2">
+            <ReceiptText className="h-4 w-4" />
+            <span className="hidden sm:inline">My Orders</span>
+          </Button>
           <Button variant="outline" size="icon" onClick={() => router.push("/dashboard/wishlist")} className="relative">
             <Heart className="h-4 w-4" />
             {wishlistCount > 0 && (

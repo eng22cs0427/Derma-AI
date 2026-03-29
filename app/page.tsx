@@ -1,113 +1,96 @@
 import Link from "next/link"
-import { ArrowRight, Stethoscope, Users, Microscope, Brain, HeartPulse } from "lucide-react"
-
+import Image from "next/image"
+import { auth } from "@clerk/nextjs/server"
+import { ArrowRight, Activity } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 import { ThemeToggle } from "@/components/theme-toggle"
+import { SlidingText } from "@/components/home/sliding-text"
 
-export default function Home() {
+export default async function Home() {
+  const { userId } = await auth()
+
+  // If already logged in, redirect them to dashboard (or let them click the button)
+  const destPath = userId ? "/dashboard" : "/login"
+  const buttonText = userId ? "Go to Dashboard" : "Get Started"
+
   return (
-    <div className="flex min-h-screen flex-col">
-      {/* Navigation */}
-      <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="container flex h-14 items-center justify-between">
-          <h1 className="text-xl font-bold">DermaAI</h1>
-          <div className="flex items-center gap-4">
-            <ThemeToggle />
-            <Link href="/login">
-              <Button variant="ghost">Login</Button>
-            </Link>
-            <Link href="/register">
-              <Button>Sign Up</Button>
-            </Link>
-          </div>
+    <div className="flex min-h-screen bg-white dark:bg-slate-950 overflow-hidden">
+      
+      {/* ── Left Side: Animated Image Section ───────────────────────────────────── */}
+      <div className="relative hidden w-1/2 lg:flex flex-col justify-end overflow-hidden bg-slate-100 dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800">
+        <div className="absolute inset-0 z-0">
+          <Image
+            src="/hero-dermatology-ai.png"
+            alt="AI Dermatology Interface"
+            fill
+            className="object-cover object-center animate-in fade-in duration-1000 zoom-in-105"
+            priority
+          />
+          {/* A gradient overlay to make things blend smoothly */}
+          <div className="absolute inset-0 bg-gradient-to-t from-slate-900/40 via-transparent to-transparent" />
         </div>
-      </header>
+        
+        {/* Subtle branding or quote on the image */}
+        <div className="relative z-10 p-12 text-white/90">
+          <p className="text-xl font-medium tracking-wide">
+            "Revolutionizing skin health with precision AI and expert care."
+          </p>
+        </div>
+      </div>
 
-      {/* Hero Section */}
-      <div className="relative">
-        <div className="absolute inset-0 bg-gradient-to-r from-blue-100 to-teal-100 dark:from-blue-950 dark:to-teal-950" />
-        <div className="relative mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8">
-          <div className="text-center">
-            <h1 className="text-4xl font-bold tracking-tight text-gray-900 dark:text-white sm:text-5xl md:text-6xl">
-              <span className="block">DermaAI</span>
-              <span className="block text-blue-600 dark:text-blue-400">AI-Assisted Dermatological Insights</span>
-            </h1>
-            <p className="mx-auto mt-3 max-w-md text-base text-gray-500 dark:text-gray-400 sm:text-lg md:mt-5 md:max-w-3xl md:text-xl">
-              Advanced AI-powered skin condition analysis and detection platform. Get accurate insights, personalized recommendations, and comprehensive support for your skin health journey.
-            </p>
-            <div className="mx-auto mt-5 max-w-md sm:flex sm:justify-center md:mt-8">
-              <div className="rounded-md shadow">
-                <Link href="/register">
-                  <Button className="w-full px-8 py-3 text-base font-medium sm:px-10">
-                    Get Started
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </Link>
+      {/* ── Right Side: Content & Action ────────────────────────────────────────── */}
+      <div className="relative flex w-full flex-col justify-between lg:w-1/2">
+        {/* Header with Theme Toggle */}
+        <header className="flex h-20 items-center justify-end px-6 sm:px-10">
+          <ThemeToggle />
+        </header>
+
+        {/* Main Content Area */}
+        <main className="flex-1 flex flex-col justify-center px-6 sm:px-10 lg:px-16 pb-20">
+          <div className="w-full max-w-lg mx-auto lg:mx-0 space-y-8">
+            
+            {/* Logo Group */}
+            <div className="flex items-center gap-3">
+              <div className="flex h-12 w-12 sm:h-14 sm:w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 shadow-xl shadow-blue-500/20">
+                <Activity className="h-6 w-6 sm:h-7 sm:w-7 text-white" />
+              </div>
+              <div>
+                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white leading-none">
+                  DermaAI
+                </h1>
+                <p className="text-sm font-semibold text-blue-600 dark:text-blue-400 mt-1 uppercase tracking-widest">
+                  Clinical Intelligence
+                </p>
               </div>
             </div>
+
+            {/* Sliding Animated Text */}
+            <div className="h-24 sm:h-28 flex flex-col justify-center">
+              <SlidingText />
+            </div>
+
+            <p className="text-base sm:text-lg text-slate-500 dark:text-slate-400 leading-relaxed max-w-md">
+              Secure, instant access to AI condition detection, top-tier dermatologists, and your personalized health records—all in one place.
+            </p>
+
+            {/* Action CTA */}
+            <div className="pt-4">
+              <Link href={destPath} className="inline-block w-full sm:w-auto">
+                <Button size="lg" className="w-full sm:w-auto h-14 px-8 text-lg font-medium bg-slate-900 hover:bg-slate-800 text-white dark:bg-blue-600 dark:hover:bg-blue-700 dark:text-white rounded-xl shadow-lg transition-transform hover:scale-[1.02] active:scale-[0.98]">
+                  {buttonText}
+                  <ArrowRight className="ml-3 h-5 w-5" />
+                </Button>
+              </Link>
+              <p className="mt-4 text-xs font-medium text-slate-400 uppercase tracking-widest">
+                Protected by Clinical Grade Security
+              </p>
+            </div>
+
           </div>
-        </div>
+        </main>
       </div>
 
-      {/* Features Section */}
-      <div className="relative bg-white dark:bg-gray-900 py-16 sm:py-24">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
-            <Card className="transform transition-all hover:scale-105">
-              <CardContent className="p-6">
-                <Microscope className="h-12 w-12 text-blue-500" />
-                <h3 className="mt-4 text-lg font-medium">AI-Powered Analysis</h3>
-                <p className="mt-2 text-gray-500 dark:text-gray-400">
-                  Get accurate skin condition detection and classification using advanced machine learning models.
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="transform transition-all hover:scale-105">
-              <CardContent className="p-6">
-                <Stethoscope className="h-12 w-12 text-blue-500" />
-                <h3 className="mt-4 text-lg font-medium">Dermatologist Connections</h3>
-                <p className="mt-2 text-gray-500 dark:text-gray-400">
-                  Connect with specialized dermatologists and get personalized treatment plans.
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="transform transition-all hover:scale-105">
-              <CardContent className="p-6">
-                <Users className="h-12 w-12 text-blue-500" />
-                <h3 className="mt-4 text-lg font-medium">Community Support</h3>
-                <p className="mt-2 text-gray-500 dark:text-gray-400">
-                  Join our community forum to share experiences and get support from others on similar skin health journeys.
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="transform transition-all hover:scale-105">
-              <CardContent className="p-6">
-                <HeartPulse className="h-12 w-12 text-blue-500" />
-                <h3 className="mt-4 text-lg font-medium">Health Tracking</h3>
-                <p className="mt-2 text-gray-500 dark:text-gray-400">
-                  Monitor your health metrics, treatment progress, and medication adherence over time.
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="transform transition-all hover:scale-105">
-              <CardContent className="p-6">
-                <Brain className="h-12 w-12 text-blue-500" />
-                <h3 className="mt-4 text-lg font-medium">Mental Wellness</h3>
-                <p className="mt-2 text-gray-500 dark:text-gray-400">
-                  Access resources for emotional and mental support throughout your skin health journey.
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-      </div>
     </div>
   )
 }
-

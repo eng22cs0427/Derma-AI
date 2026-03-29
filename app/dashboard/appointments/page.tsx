@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Image from "next/image";
 import {
   Calendar,
@@ -36,10 +36,11 @@ import { Slider } from "@/components/ui/slider"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { useMedicalHistory } from "@/contexts/MedicalHistoryContext";
+import { useProfile } from "@/contexts/ProfileContext";
 
 // Add the Doctor interface
 interface Doctor {
-  id: number;
+  id: number | string;
   name: string;
   specialty: string;
   subspecialty: string;
@@ -59,7 +60,7 @@ interface Doctor {
 }
 
 // Sample data for doctors
-const doctors = [
+const DUMMY_DOCTORS = [
   {
     id: 1,
     name: "Dr. Priya Sharma",
@@ -518,6 +519,20 @@ const DoctorInfoModal = ({ doctor, isOpen, onClose, onSelectDoctor }: { doctor: 
 };
 
 export default function AppointmentsPage() {
+  const [doctorsList, setDoctorsList] = useState<Doctor[]>(DUMMY_DOCTORS as any);
+  
+  useEffect(() => {
+    fetch('/api/doctors')
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.length > 0) {
+          // Verify real doctors show first, then fill remainder with detailed dummy doctors for a populated layout
+          setDoctorsList([...data, ...(DUMMY_DOCTORS as any[])]);
+        }
+      })
+      .catch(console.error);
+  }, []);
+
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedSpecialty, setSelectedSpecialty] = useState("all")
   const [selectedLocation, setSelectedLocation] = useState("all")
@@ -531,22 +546,23 @@ export default function AppointmentsPage() {
   const [showBookingSuccess, setShowBookingSuccess] = useState(false)
   const [uploadedFiles, setUploadedFiles] = useState<string[]>([])
   const [appointmentId, setAppointmentId] = useState("")
-  const [patientName] = useState("Sabareesh S P") // In a real app, get from user profile
-  const [patientEmail] = useState("sabareeshsp7@gmail.com") // In a real app, get from user profile
-  const [patientPhone] = useState("+91 9876543210") // In a real app, get from user profile
   const [selectedDoctorInfo, setSelectedDoctorInfo] = useState<Doctor | null>(null)
+  const [appointmentSaved, setAppointmentSaved] = useState(false)
 
   // Add medical history context
   const { addHistory } = useMedicalHistory()
 
-  // Add state for tracking if appointment is saved
-  const [appointmentSaved, setAppointmentSaved] = useState(false)
+  // Pull live profile data for patient info auto-fill
+  const { profile } = useProfile()
+  const patientName = profile?.fullName || "Patient"
+  const patientEmail = profile?.email || ""
+  const patientPhone = profile?.contactNumber || ""
 
   // Generate available dates and time slots
   const availableDates = generateDates()
 
   // Filter doctors based on search and filters
-  const filteredDoctors = doctors.filter((doctor) => {
+  const filteredDoctors = doctorsList.filter((doctor) => {
     // Search query filter
     const matchesSearch =
       doctor.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -574,7 +590,7 @@ export default function AppointmentsPage() {
     )
   })
 
-  const handleBookAppointment = () => {
+  const handleBookAppointment = async () => {
     if (!selectedTimeSlot) {
       toast.error("Error", {
         description: "Please select a time slot for your appointment.",
@@ -582,28 +598,57 @@ export default function AppointmentsPage() {
       return
     }
 
+    if (!selectedDoctor) return;
+
     // Generate a unique appointment ID
     const newAppointmentId = generateAppointmentId()
     setAppointmentId(newAppointmentId)
 
-    // Simulate booking process
-    setTimeout(() => {
+    try {
       setShowBookingSuccess(true)
       
-      // Save appointment to medical history (LOCAL ONLY - no Supabase)
-      if (selectedDoctor && selectedTimeSlot && !appointmentSaved) {
-        // Save to local context only
-        const appointmentDisplayData = `Appointment with ${selectedDoctor.name} at ${format(selectedTimeSlot, "h:mm a")} on ${format(selectedTimeSlot, "MMMM d, yyyy")} - ${selectedDoctor.specialty} (${selectedDoctor.subspecialty}) - ${consultationType === "telemedicine" ? "Telemedicine" : "In-Person"} - ID: ${newAppointmentId}`
-        
+      const type = consultationType === "telemedicine" ? "Telemedicine" : "In-Person Clinic";
+      const dt = format(selectedTimeSlot, "MMMM d, yyyy");
+      const tm = format(selectedTimeSlot, "h:mm a");
+
+      // Save appointment to new Postgres tables (+ fires Notification to Doctor portal)
+      if (!appointmentSaved) {
+        await fetch('/api/appointments', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+             doctorId: selectedDoctor.id,
+             doctorName: selectedDoctor.name,
+             specialty: `${selectedDoctor.specialty} (${selectedDoctor.subspecialty})`,
+             appointmentDate: dt,
+             appointmentTime: tm,
+             type: type,
+             fee: `₹${selectedDoctor.consultationFee}`
+          })
+        });
+
+        // Add locally to UI context
         addHistory({
           type: "Appointment",
-          data: appointmentDisplayData
-        })
+          data: `Consultation — ${selectedDoctor.name}`,
+          details: {
+            Appointment_ID: newAppointmentId,
+            Doctor_Name: selectedDoctor.name,
+            Specialty: `${selectedDoctor.specialty} (${selectedDoctor.subspecialty})`,
+            Date: dt,
+            Time: tm,
+            Type: type,
+            Location: selectedDoctor.hospital,
+            Fee: `₹${selectedDoctor.consultationFee}`
+          }
+        });
         
         setAppointmentSaved(true)
       }
       
-    }, 1000)
+    } catch (err) {
+      console.error(err);
+    }
   }
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
