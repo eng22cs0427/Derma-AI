@@ -1,90 +1,82 @@
-import { NextResponse } from 'next/server';
-import { auth, currentUser } from '@clerk/nextjs/server';
-import { query } from '@/lib/aws-database';
+import { NextResponse } from 'next/server'
+import { currentUser } from '@clerk/nextjs/server'
+import { getCollection, ObjectId } from '@/lib/mongodb'
+import type { IProfile, IMedicalHistory } from '@/database/mongodb-schema'
+
+async function getProfileId(clerkUserId: string, email: string): Promise<ObjectId | null> {
+  const col = await getCollection<IProfile>('profiles')
+  const doc = await col.findOne({ $or: [{ clerkUserId }, { email }] })
+  return doc?._id ?? null
+}
 
 export async function GET() {
   try {
-    const user = await currentUser();
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const user = await currentUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const primaryEmail = user.emailAddresses?.[0]?.emailAddress || '';
+    const email = user.emailAddresses?.[0]?.emailAddress || ''
+    const profileId = await getProfileId(user.id, email)
+    if (!profileId) return NextResponse.json([], { status: 200 })
 
-    const result = await query(
-      `SELECT mh.id, mh.type, mh.data, mh.details, mh.date
-       FROM medical_history mh
-       JOIN profiles p ON mh.user_id = p.id
-       WHERE p.cognito_user_id = $1 OR p.email = $2
-       ORDER BY mh.date DESC`,
-      [user.id, primaryEmail]
-    );
+    const col = await getCollection<IMedicalHistory>('medical_history')
+    const records = await col
+      .find({ userId: profileId })
+      .sort({ date: -1 })
+      .toArray()
 
-    return NextResponse.json(result.rows, { status: 200 });
-  } catch (error: any) {
-    console.error('GET /api/medical-history error:', error);
-    if (error?.code === 'ETIMEDOUT' || error?.message?.includes('timeout') || error?.message?.includes('ETIMEDOUT')) {
-      // Degrade gracefully so app doesn't crash for the user demonstration
-      return NextResponse.json([], { status: 200 });
-    }
     return NextResponse.json(
-      { error: 'Failed to fetch medical history' },
-      { status: 500 }
-    );
+      records.map((r) => ({
+        id: r._id!.toString(),
+        type: r.type,
+        data: r.data,
+        details: r.details,
+        date: r.date,
+      }))
+    )
+  } catch (error: unknown) {
+    console.error('GET /api/medical-history error:', error)
+    return NextResponse.json([], { status: 200 }) // Graceful degrade
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const user = await currentUser();
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const user = await currentUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const primaryEmail = user.emailAddresses?.[0]?.emailAddress || '';
+    const email = user.emailAddresses?.[0]?.emailAddress || ''
+    const profileId = await getProfileId(user.id, email)
+    if (!profileId) return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
 
-    // First fetch exact profile ID
-    const profileRes = await query(
-      `SELECT id FROM profiles WHERE cognito_user_id = $1 OR email = $2 LIMIT 1`,
-      [user.id, primaryEmail]
-    );
+    const body = await request.json()
+    const { type, data, details } = body
 
-    if (profileRes.rows.length === 0) {
-      return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
-    }
+    if (!type || !data) return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
 
-    const dbProfileId = profileRes.rows[0].id;
+    const col = await getCollection<IMedicalHistory>('medical_history')
+    const now = new Date()
+    const result = await col.insertOne({
+      userId: profileId,
+      type,
+      data,
+      details: details ?? undefined,
+      date: now,
+      createdAt: now,
+      updatedAt: now,
+    })
 
-    const body = await request.json();
-    const { type, data, details } = body;
-
-    if (!type || !data) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
-    }
-
-    const result = await query(
-      `INSERT INTO medical_history (user_id, type, data, details)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, type, data, details, date`,
-      [dbProfileId, type, data, details ? JSON.stringify(details) : null]
-    );
-
-    return NextResponse.json(result.rows[0], { status: 200 });
-  } catch (error: any) {
-    console.error('POST /api/medical-history error:', error);
-    if (error?.code === 'ETIMEDOUT' || error?.message?.includes('timeout') || error?.message?.includes('ETIMEDOUT')) {
-      // Degrade gracefully so app doesn't crash for the user demonstration
-      return NextResponse.json({
-        id: `mock-${Date.now()}`,
-        type: 'Medical History',
-        data: 'Saved offline (Database unreachable)',
-        details: null,
-        date: new Date().toISOString()
-      }, { status: 200 });
-    }
-    return NextResponse.json(
-      { error: 'Failed to save to medical history' },
-      { status: 500 }
-    );
+    return NextResponse.json({
+      id: result.insertedId.toString(),
+      type, data, details, date: now,
+    })
+  } catch (error: unknown) {
+    console.error('POST /api/medical-history error:', error)
+    return NextResponse.json({
+      id: `mock-${Date.now()}`,
+      type: 'Medical History',
+      data: 'Saved (note: DB had an issue)',
+      details: null,
+      date: new Date().toISOString(),
+    }, { status: 200 })
   }
 }

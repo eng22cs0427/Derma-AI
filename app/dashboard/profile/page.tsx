@@ -66,7 +66,7 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [formData, setFormData] = useState<Partial<UserProfile>>({})
+  const [formData, setFormData] = useState<Partial<UserProfile> & { firstName?: string; lastName?: string }>({})
   const [dbOffline, setDbOffline] = useState(false)
 
   useEffect(() => {
@@ -80,7 +80,14 @@ export default function ProfilePage() {
       if (response.ok) {
         const data: UserProfile = await response.json()
         setProfile(data)
-        setFormData(data)
+        
+        const nameParts = (data.fullName || "").split(" ")
+        setFormData({ 
+           ...data, 
+           firstName: nameParts[0] || "",
+           lastName: nameParts.slice(1).join(" ") || ""
+        })
+        
         setDbOffline(data._dbOffline === true)
       } else if (response.status === 404) {
         toast.error("Profile not found", { description: "Please try logging in again." })
@@ -97,10 +104,18 @@ export default function ProfilePage() {
   const handleSave = async () => {
     try {
       setSaving(true)
+      
+      const payloadToSave = { ...formData }
+      if (payloadToSave.firstName || payloadToSave.lastName) {
+        payloadToSave.fullName = `${payloadToSave.firstName || ""} ${payloadToSave.lastName || ""}`.trim()
+      }
+      delete payloadToSave.firstName
+      delete payloadToSave.lastName
+
       const response = await fetch('/api/profile', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payloadToSave),
       })
 
       if (response.ok) {
@@ -125,7 +140,12 @@ export default function ProfilePage() {
   }
 
   const handleCancel = () => {
-    setFormData(profile || {})
+    const nameParts = (profile?.fullName || "").split(" ")
+    setFormData({ 
+       ...(profile || {}), 
+       firstName: nameParts[0] || "",
+       lastName: nameParts.slice(1).join(" ") || ""
+    })
     setEditing(false)
   }
 
@@ -255,8 +275,12 @@ export default function ProfilePage() {
           {editing ? (
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-1.5">
-                <Label>Full Name</Label>
-                <Input value={formData.fullName || ""} onChange={(e) => setFormData({ ...formData, fullName: e.target.value })} />
+                <Label>First Name</Label>
+                <Input value={formData.firstName || ""} onChange={(e) => setFormData({ ...formData, firstName: e.target.value })} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Last Name</Label>
+                <Input value={formData.lastName || ""} onChange={(e) => setFormData({ ...formData, lastName: e.target.value })} />
               </div>
               <div className="space-y-1.5">
                 <Label>Email</Label>

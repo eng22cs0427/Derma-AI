@@ -1,82 +1,83 @@
 import { NextResponse } from 'next/server'
 import { currentUser } from '@clerk/nextjs/server'
-import { query } from '@/lib/aws-database'
+import { getCollection, ObjectId } from '@/lib/mongodb'
+import type { IProfile, IMedicalHistory, IDoctorNotification } from '@/database/mongodb-schema'
 
-// GET — returns recent new analyses and appointment notifications
 export async function GET() {
   try {
     const user = await currentUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    
-    const primaryEmail = user.emailAddresses?.[0]?.emailAddress || '';
 
-    // Need doctor profile ID
-    const docRes = await query(
-      `SELECT id FROM profiles WHERE cognito_user_id = $1 OR email = $2 LIMIT 1`,
-      [user.id, primaryEmail]
-    );
+    const email = user.emailAddresses?.[0]?.emailAddress || ''
+    const profiles = await getCollection<IProfile>('profiles')
+    const docProfile = await profiles.findOne({ $or: [{ clerkUserId: user.id }, { email }] })
+    const docId = docProfile?._id
 
-    let docId = docRes.rows[0]?.id;
+    const histCol = await getCollection<IMedicalHistory>('medical_history')
+    const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000)
 
-    // 1. Fetch analyses from last 24 hours
-    const analysisRes = await query(
-      `SELECT
-         mh.id, mh.data, mh.details, mh.date,
-         p.full_name AS patient_name, p.email AS patient_email
-       FROM medical_history mh
-       JOIN profiles p ON mh.user_id = p.id
-       WHERE mh.type = 'Analysis' AND mh.date >= NOW() - INTERVAL '24 hours'
-       ORDER BY mh.date DESC LIMIT 10`,
-      []
+    // Recent analyses from all patients
+    const recentAnalyses = await histCol
+      .find({ type: 'Analysis', date: { $gte: last24h } })
+      .sort({ date: -1 })
+      .limit(10)
+      .toArray()
+
+    const analysisItems = await Promise.all(
+      recentAnalyses.map(async (r) => {
+        const patient = await profiles.findOne({ _id: r.userId })
+        const details = r.details as Record<string, string> | undefined
+        return {
+          id: `ana_${r._id!.toString()}`,
+          patientName: patient?.fullName || 'Unknown Patient',
+          patientEmail: patient?.email || '',
+          diagnosis: details?.Diagnosis || r.data,
+          riskLevel: details?.Risk_Level || 'Low',
+          date: r.date,
+          message: `${patient?.fullName || 'A patient'} submitted a new skin analysis`,
+          type: 'Analysis',
+          link: '/doctor-dashboard/analyses',
+        }
+      })
     )
 
-    let notificationItems = analysisRes.rows.map(r => ({
-      id: "ana_" + r.id,
-      patientName: r.patient_name || 'Unknown Patient',
-      patientEmail: r.patient_email || '',
-      diagnosis: (typeof r.details === 'string' ? JSON.parse(r.details) : r.details)?.Diagnosis || r.data,
-      riskLevel: (typeof r.details === 'string' ? JSON.parse(r.details) : r.details)?.Risk_Level || 'Low',
-      date: r.date,
-      message: `${r.patient_name || 'A patient'} submitted a new skin analysis`,
-      type: "Analysis",
-      link: "/doctor-dashboard/analyses"
-    }));
+    let notificationItems = [...analysisItems]
 
-    // 2. Fetch specific doctor appointments notifications
+    // Doctor-specific appointment notifications
     if (docId) {
-      const apptRes = await query(
-        `SELECT
-           dn.id, dn.title, dn.message, dn.created_at, dn.link, dn.type,
-           p.full_name AS patient_name
-         FROM doctor_notifications dn
-         LEFT JOIN profiles p ON dn.patient_id = p.id
-         WHERE dn.doctor_id = $1 AND dn.created_at >= NOW() - INTERVAL '3 days'
-         ORDER BY dn.created_at DESC LIMIT 15`,
-        [docId]
-      );
+      const notifCol = await getCollection<IDoctorNotification>('doctor_notifications')
+      const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000)
 
-      const apptItems = apptRes.rows.map(r => ({
-         id: "appt_" + r.id,
-         patientName: r.patient_name || 'Patient',
-         patientEmail: '',
-         diagnosis: '',
-         riskLevel: '',
-         message: r.message,
-         title: r.title,
-         type: r.type,
-         date: r.created_at,
-         link: r.link
-      }));
+      const apptNotifs = await notifCol
+        .find({ doctorId: docId, createdAt: { $gte: threeDaysAgo } })
+        .sort({ createdAt: -1 })
+        .limit(15)
+        .toArray()
 
-      notificationItems = [...notificationItems, ...apptItems].sort(
-        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-      ).slice(0, 20);
+      const apptItems = await Promise.all(
+        apptNotifs.map(async (n) => {
+          const patient = n.patientId ? await profiles.findOne({ _id: n.patientId }) : null
+          return {
+            id: `appt_${n._id!.toString()}`,
+            patientName: patient?.fullName || 'Patient',
+            patientEmail: '' as string,
+            diagnosis: '' as string,
+            riskLevel: '' as string,
+            message: n.message,
+            title: n.title as string,
+            type: n.type as string,
+            date: n.createdAt,
+            link: n.link as string,
+          }
+        })
+      )
+
+      notificationItems = [...notificationItems, ...apptItems]
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        .slice(0, 20)
     }
 
-    return NextResponse.json({
-      count: notificationItems.length,
-      notifications: notificationItems
-    })
+    return NextResponse.json({ count: notificationItems.length, notifications: notificationItems })
   } catch (error) {
     console.error('[doctor/notifications GET]', error)
     return NextResponse.json({ count: 0, notifications: [] }, { status: 200 })

@@ -1,20 +1,26 @@
-/**
- * GET /api/admin/list-profiles
- * Dev-only: lists all profiles so we can see what emails/roles exist.
- * Remove this file before going to production.
- */
 import { NextResponse } from 'next/server'
-import { query } from '@/lib/aws-database'
+import { getCollection } from '@/lib/mongodb'
+import type { IProfile } from '@/database/mongodb-schema'
 
 export async function GET() {
   try {
-    const result = await query(
-      `SELECT email, full_name, role, is_onboarded, created_at
-       FROM profiles WHERE is_active = true ORDER BY created_at DESC`,
-      []
-    )
-    return NextResponse.json({ profiles: result.rows })
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    const col = await getCollection<IProfile>('profiles')
+    const profiles = await col
+      .find({ isActive: true })
+      .sort({ createdAt: -1 })
+      .project({ email: 1, fullName: 1, role: 1, isOnboarded: 1, createdAt: 1 })
+      .toArray()
+
+    return NextResponse.json({
+      profiles: profiles.map((p) => ({
+        email: p.email,
+        full_name: p.fullName,
+        role: p.role,
+        is_onboarded: p.isOnboarded,
+        created_at: p.createdAt,
+      })),
+    })
+  } catch (error: unknown) {
+    return NextResponse.json({ error: (error as Error).message }, { status: 500 })
   }
 }

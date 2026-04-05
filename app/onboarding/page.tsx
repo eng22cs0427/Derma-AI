@@ -28,6 +28,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { toast } from "sonner"
 
 const formSchema = z.object({
+  firstName: z.string().min(2, "First Name is required"),
+  lastName: z.string().min(1, "Last Name is required"),
   contactNumber: z.string().min(5, "Contact Number is required"),
   gender: z.string().min(1, "Please select your gender"),
   weight: z.string().min(1, "Weight is required"),
@@ -49,6 +51,8 @@ export default function OnboardingPage() {
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
+      firstName: "",
+      lastName: "",
       contactNumber: "",
       gender: "",
       weight: "",
@@ -77,6 +81,11 @@ export default function OnboardingPage() {
           }
           
           // Pre-fill standard fields if they exist
+          if (profile.fullName) {
+             const parts = profile.fullName.split(' ');
+             form.setValue("firstName", parts[0] || "");
+             form.setValue("lastName", parts.slice(1).join(' ') || "");
+          }
           if (profile.contactNumber) form.setValue("contactNumber", profile.contactNumber)
           if (profile.gender) form.setValue("gender", profile.gender)
         } else if (response.status === 404) {
@@ -102,6 +111,7 @@ export default function OnboardingPage() {
     
     // Separate standard profile fields and medical info JSON
     const payload = {
+      fullName: `${values.firstName.trim()} ${values.lastName.trim()}`,
       contactNumber: values.contactNumber,
       gender: values.gender,
       isOnboarded: true,
@@ -176,6 +186,35 @@ export default function OnboardingPage() {
                 <h3 className="text-lg font-semibold flex items-center gap-2">
                   <HeartPulse className="h-5 w-5 text-red-500" /> Basic Information
                 </h3>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="firstName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>First Name</FormLabel>
+                        <FormControl>
+                          <Input placeholder="John" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="lastName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Last Name</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Doe" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
                 
                 <FormField
                   control={form.control}

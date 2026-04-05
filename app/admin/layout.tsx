@@ -4,6 +4,7 @@ import { currentUser } from "@clerk/nextjs/server"
 import Link from "next/link"
 import { ShieldAlert, ArrowLeft } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { getUserProfile } from "@/lib/profile-sync"
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const user = await currentUser()
@@ -12,13 +13,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     redirect("/login")
   }
 
-  // Find primary email
-  const primaryEmail =
-    user.emailAddresses?.find((e) => e.id === user.primaryEmailAddressId)?.emailAddress ||
-    user.emailAddresses?.[0]?.emailAddress
+  // Fetch db profile
+  const dbProfile = await getUserProfile(user.id)
+  const role = dbProfile?.role || 'patient'
 
-  // Exactly match the designated super-admin email
-  if (primaryEmail !== "sabareeshsp7@gmail.com") {
+  // Restrict to admins
+  if (role !== "admin") {
     return (
       <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-4">
         <div className="max-w-md w-full text-center space-y-6">

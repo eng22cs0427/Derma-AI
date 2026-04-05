@@ -19,7 +19,9 @@ import { toast } from "sonner"
 import {
   UserCheck, UserX, Plus, RefreshCcw, Loader2,
   Mail, Shield, AlertTriangle, CheckCircle, Stethoscope,
+  ArrowLeft,
 } from "lucide-react"
+import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -187,8 +189,11 @@ export default function AdminDoctorsPage() {
       <div className="max-w-3xl mx-auto space-y-6">
 
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
+            <Link href="/dashboard" className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-900 dark:hover:text-white transition-colors mb-2">
+              <ArrowLeft className="h-4 w-4" /> Back to Dashboard
+            </Link>
             <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
               <Shield className="h-6 w-6 text-blue-600" /> Doctor Management
             </h1>
@@ -196,7 +201,7 @@ export default function AdminDoctorsPage() {
               Add or remove doctor accounts. You can convert any registered patient into a doctor.
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={fetchDoctors} className="gap-2">
+          <Button variant="outline" size="sm" onClick={fetchDoctors} className="gap-2 self-start sm:self-center">
             <RefreshCcw className="h-4 w-4" /> Refresh
           </Button>
         </div>

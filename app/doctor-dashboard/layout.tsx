@@ -57,7 +57,7 @@ export default async function DoctorDashboardLayout({ children }: { children: Re
   // (If you want strict doctor-only, change this to: userRole !== 'doctor')
 
   return (
-    <DoctorShell isAdmin={primaryEmail === "sabareeshsp7@gmail.com"}>
+    <DoctorShell isAdmin={userRole === 'admin'}>
       {children}
     </DoctorShell>
   )

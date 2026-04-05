@@ -26,8 +26,6 @@ import { Progress } from "@/components/ui/progress"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 // Add medical history context import
 import { useMedicalHistory } from "@/contexts/MedicalHistoryContext"
-import { useProfile } from "@/contexts/ProfileContext"
-import { useRouter } from "next/navigation"
 
 const COLORS = ['#4ade80', '#facc15', '#f97316', '#ef4444', '#60a5fa', '#a78bfa', '#f472b6']
 
@@ -118,14 +116,12 @@ export function ImageAnalyzer() {
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [result, setResult] = useState<PredictionResult | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [analysisSaved, setAnalysisSaved] = useState(false)
-  const [isSavingToCloud, setIsSavingToCloud] = useState(false)
+  const [analysisSaved, setAnalysisSaved] = useState(false) // Add this state variable
   const fileInputRef = useRef<HTMLInputElement>(null)
   const analysisRef = useRef<HTMLDivElement>(null)
-  const router = useRouter()
 
-  const { insertOptimistic, refreshHistory } = useMedicalHistory()
-  const { profile } = useProfile()
+  // Add medical history context
+  const { refreshHistory } = useMedicalHistory()
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -193,8 +189,7 @@ export function ImageAnalyzer() {
 
     setIsAnalyzing(true)
     setError(null)
-    setAnalysisSaved(false)
-    setIsSavingToCloud(false)
+    setAnalysisSaved(false) // Reset saved state
 
     try {
       // Create FormData and append the file directly
@@ -215,46 +210,10 @@ export function ImageAnalyzer() {
       const data = await res.json()
       setResult(data)
 
-      // Refresh local UI instantly (Optimistic UI)
-      const mockId = "ana_" + Date.now().toString()
-      
-      const newHistoryItem = {
-        id: mockId,
-        type: "Analysis" as const,
-        data: `Skin Analysis — ${data.prediction} Detected`,
-        date: new Date().toISOString(),
-        details: {
-          Patient_Name: profile?.fullName || "Patient",
-          Diagnosis: data.prediction,
-          Confidence: `${(data.confidence * 100).toFixed(2)}%`,
-          Risk_Level: "Calculating...", // or pull from client mapping if available
-          Assessment: "Detailed assessment required",
-          Recommendation: "Please consult a specialist.",
-          source: 'DermaSense AI Engine',
-          imageUrl: '',
-          analysis_time: new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' (IST)',
-        }
-      }
-      insertOptimistic(newHistoryItem)
+      // Refresh medical history to include the new analysis saved by the server
+      refreshHistory()
+      setAnalysisSaved(true) // Mark as saved
 
-      // Start AWS S3 and RDS save in background WITHOUT blocking the user!
-      setIsSavingToCloud(true)
-      const saveFormData = new FormData()
-      saveFormData.append("file", selectedFile)
-      saveFormData.append("prediction", JSON.stringify(data))
-
-      fetch("/api/save-analysis", {
-        method: "POST",
-        body: saveFormData
-      }).then(saveRes => saveRes.json())
-        .then(saveData => {
-          if(saveData.success) {
-             setAnalysisSaved(true)
-             refreshHistory() // pull real item
-          }
-        }).catch(e => console.error("Cloud save failed", e))
-        .finally(() => setIsSavingToCloud(false))
-      
       // Show success toast
       if (data.prediction === "Carcinoma") {
         toast.error("Analysis Complete", {
@@ -536,25 +495,16 @@ export function ImageAnalyzer() {
                 </div>
                 <div className="flex items-center gap-2">
                   {/* Enhanced indication that analysis was saved to history */}
-                  {isSavingToCloud ? (
-                    <motion.div
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="flex items-center gap-2 px-3 py-1.5 bg-blue-100 dark:bg-blue-900/30 rounded-full text-xs font-medium text-blue-700 dark:text-blue-300"
-                    >
-                      <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                      <span>Saving to AWS...</span>
-                    </motion.div>
-                  ) : analysisSaved ? (
+                  {analysisSaved && (
                     <motion.div
                       initial={{ scale: 0 }}
                       animate={{ scale: 1 }}
                       className="flex items-center gap-1 px-3 py-1.5 bg-emerald-100 dark:bg-emerald-900/30 rounded-full text-xs font-medium text-emerald-700 dark:text-emerald-300"
                     >
-                      <CheckCircle2 className="h-4 w-4" />
-                      <span>Saved to AWS</span>
+                      <CheckCircle2 className="h-3 w-3" />
+                      <span>Saved to History</span>
                     </motion.div>
-                  ) : null}
+                  )}
                   <Button variant="outline" size="sm" onClick={speakSummary} className="flex items-center shadow-sm">
                     <Volume2 className="h-4 w-4 sm:mr-1" />
                     <span className="hidden sm:inline">Speak</span>
@@ -682,7 +632,16 @@ export function ImageAnalyzer() {
                     </div>
                   </motion.div>
                   
-
+                  {assignedDoctors.length > 0 && (
+                    <motion.div whileHover={{ scale: 1.02 }} className="bg-green-50 p-4 rounded-lg border border-green-200">
+                      <p className="text-sm font-semibold text-green-700 mb-2">Consult These Specialists</p>
+                      <ul className="list-disc list-inside text-sm text-green-800">
+                        {assignedDoctors.map((doc) => (
+                          <li key={doc}>{doc}</li>
+                        ))}
+                      </ul>
+                    </motion.div>
+                  )}
                 </div>
                 
                 {/* Right column - Analysis Visuals */}
@@ -771,14 +730,20 @@ export function ImageAnalyzer() {
               <div className="flex gap-2">
                 <Button
                   variant="secondary"
-                  onClick={() => router.push("/dashboard/analysis/history")}
+                  onClick={() => {
+                    // Navigate to analysis history page
+                    window.location.href = "/dashboard/analysis/history"
+                  }}
                 >
                   <Clock className="h-4 w-4 mr-2" />
                   View History
                 </Button>
                 <Button
                   variant="default"
-                  onClick={() => router.push("/dashboard/appointments")}
+                  onClick={() => {
+                    // In a real app, this would navigate to appointment booking
+                    window.location.href = "/dashboard/appointments"
+                  }}
                 >
                   Book Consultation
                 </Button>

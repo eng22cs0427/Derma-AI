@@ -1,60 +1,48 @@
-import { NextResponse } from "next/server";
-import { auth, clerkClient } from "@clerk/nextjs/server";
-import { query } from "@/lib/aws-database";
+import { NextResponse } from 'next/server'
+import { auth, clerkClient } from '@clerk/nextjs/server'
+import { getCollection } from '@/lib/mongodb'
+import type { IProfile } from '@/database/mongodb-schema'
 
 export async function POST(req: Request) {
   try {
-    // 1. Check if the requester is an admin
-    const { sessionClaims } = await auth();
-    // Assuming you have an admin role set up, or for now, we'll allow this endpoint 
-    // to be called if the user has a specific email or we can just protect it with a secret.
-    // For this specific request, let's bypass strict admin check to easily assign sabreeshsp7@gmail.com
-    
-    // In a real production app, verify the caller is actually an admin:
-    // if ((sessionClaims?.publicMetadata as any)?.role !== 'admin') {
-    //  return new NextResponse("Unauthorized", { status: 403 });
-    // }
-
-    const body = await req.json();
-    const { email, role } = body;
-
-    if (!email || !role) {
-      return new NextResponse("Missing email or role", { status: 400 });
+    const { sessionClaims } = await auth()
+    const requesterRole = (sessionClaims?.publicMetadata as Record<string, unknown>)?.role
+    if (requesterRole !== 'admin') {
+      // Allow in dev for easy setup; enforce in production
+      if (process.env.NODE_ENV === 'production') {
+        return new NextResponse('Unauthorized — admin only', { status: 403 })
+      }
     }
 
-    if (!['doctor', 'patient', 'admin'].includes(role)) {
-      return new NextResponse("Invalid role", { status: 400 });
-    }
+    const body = await req.json()
+    const { email, role } = body
 
-    const client = await clerkClient();
+    if (!email || !role) return new NextResponse('Missing email or role', { status: 400 })
+    if (!['doctor', 'patient', 'admin'].includes(role)) return new NextResponse('Invalid role', { status: 400 })
 
-    // 2. Find the user in Clerk by email
-    const users = await client.users.getUserList({ emailAddress: [email] });
-    
+    const client = await clerkClient()
+
+    // Find user in Clerk
+    const users = await client.users.getUserList({ emailAddress: [email] })
     if (users.data.length === 0) {
-      return new NextResponse(`User with email ${email} not found in Clerk`, { status: 404 });
+      return new NextResponse(`User ${email} not found in Clerk`, { status: 404 })
     }
 
-    const clerkUserId = users.data[0].id;
+    const clerkUserId = users.data[0].id
 
-    // 3. Update the user's public metadata in Clerk
-    await client.users.updateUser(clerkUserId, {
-      publicMetadata: { role: role }
-    });
+    // Update Clerk metadata
+    await client.users.updateUser(clerkUserId, { publicMetadata: { role } })
 
-    // 4. Update the user's role in the AWS PostgreSQL database
-    await query(
-      `UPDATE profiles SET role = $1 WHERE email = $2 OR cognito_user_id = $3`,
-      [role, email, clerkUserId]
-    );
+    // Update MongoDB
+    const col = await getCollection<IProfile>('profiles')
+    await col.updateOne(
+      { $or: [{ email }, { clerkUserId }] },
+      { $set: { role, updatedAt: new Date() } }
+    )
 
-    return NextResponse.json({ 
-      success: true, 
-      message: `Successfully updated ${email} to role ${role}` 
-    });
-
+    return NextResponse.json({ success: true, message: `Updated ${email} to role ${role}` })
   } catch (error) {
-    console.error("[SET_ROLE_ERROR]", error);
-    return new NextResponse("Internal Server Error", { status: 500 });
+    console.error('[SET_ROLE_ERROR]', error)
+    return new NextResponse('Internal Server Error', { status: 500 })
   }
 }

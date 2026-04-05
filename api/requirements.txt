@@ -10,3 +10,11 @@ python-multipart==0.0.9
 requests==2.32.3
 h5py==3.11.0
 python-dotenv==1.0.1
+# New additions for v2.0
+scikit-image==0.24.0
+albumentations==1.4.0
+reportlab==4.2.0
+azure-cognitiveservices-vision-computervision==0.9.0
+azure-common==1.1.28
+msrest==0.7.1
+tensorflow-hub==0.16.1

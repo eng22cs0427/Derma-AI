@@ -40,7 +40,7 @@ import { useProfile } from "@/contexts/ProfileContext";
 
 // Add the Doctor interface
 interface Doctor {
-  id: number | string;
+  id: number;
   name: string;
   specialty: string;
   subspecialty: string;
@@ -60,7 +60,7 @@ interface Doctor {
 }
 
 // Sample data for doctors
-const DUMMY_DOCTORS = [
+const staticDoctors = [
   {
     id: 1,
     name: "Dr. Priya Sharma",
@@ -441,7 +441,7 @@ const DoctorInfoModal = ({ doctor, isOpen, onClose, onSelectDoctor }: { doctor: 
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Image
-              src={doctor.image}
+              src={doctor.image || "/placeholder.svg?height=150&width=150"}
               alt={doctor.name}
               width={64}
               height={64}
@@ -519,20 +519,7 @@ const DoctorInfoModal = ({ doctor, isOpen, onClose, onSelectDoctor }: { doctor: 
 };
 
 export default function AppointmentsPage() {
-  const [doctorsList, setDoctorsList] = useState<Doctor[]>(DUMMY_DOCTORS as any);
-  
-  useEffect(() => {
-    fetch('/api/doctors')
-      .then(res => res.json())
-      .then(data => {
-        if (data && data.length > 0) {
-          // Verify real doctors show first, then fill remainder with detailed dummy doctors for a populated layout
-          setDoctorsList([...data, ...(DUMMY_DOCTORS as any[])]);
-        }
-      })
-      .catch(console.error);
-  }, []);
-
+  const [allDoctors, setAllDoctors] = useState<Doctor[]>(staticDoctors)
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedSpecialty, setSelectedSpecialty] = useState("all")
   const [selectedLocation, setSelectedLocation] = useState("all")
@@ -557,12 +544,30 @@ export default function AppointmentsPage() {
   const patientName = profile?.fullName || "Patient"
   const patientEmail = profile?.email || ""
   const patientPhone = profile?.contactNumber || ""
+  const [patientSymptoms, setPatientSymptoms] = useState("")
+
+  // Fetch live doctors from API
+  useEffect(() => {
+    const fetchLiveDoctors = async () => {
+      try {
+        const res = await fetch('/api/doctors')
+        if (res.ok) {
+           const liveDocs = await res.json()
+           // Append live docs to standard mock list
+           setAllDoctors([...liveDocs, ...staticDoctors])
+        }
+      } catch (err) {
+        console.error("Failed to fetch live doctors", err)
+      }
+    }
+    fetchLiveDoctors()
+  }, [])
 
   // Generate available dates and time slots
   const availableDates = generateDates()
 
   // Filter doctors based on search and filters
-  const filteredDoctors = doctorsList.filter((doctor) => {
+  const filteredDoctors = allDoctors.filter((doctor) => {
     // Search query filter
     const matchesSearch =
       doctor.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -590,7 +595,7 @@ export default function AppointmentsPage() {
     )
   })
 
-  const handleBookAppointment = async () => {
+  const handleBookAppointment = () => {
     if (!selectedTimeSlot) {
       toast.error("Error", {
         description: "Please select a time slot for your appointment.",
@@ -598,36 +603,35 @@ export default function AppointmentsPage() {
       return
     }
 
-    if (!selectedDoctor) return;
-
     // Generate a unique appointment ID
     const newAppointmentId = generateAppointmentId()
     setAppointmentId(newAppointmentId)
 
-    try {
+    const meetLink = consultationType === "telemedicine" ? `https://teams.live.com/meet/${Math.random().toString(36).substring(7)}` : null
+
+    // Call Mock API to send confirmation emails/save to backend
+    if (selectedDoctor) {
+      fetch('/api/appointments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          doctorId: selectedDoctor.id,
+          patientName: patientName,
+          symptoms: patientSymptoms,
+          date: selectedTimeSlot.toISOString(),
+          type: consultationType,
+          telemedicineLink: meetLink
+        })
+      }).catch(e => console.warn(e))
+    }
+
+    // Simulate booking process
+    setTimeout(() => {
       setShowBookingSuccess(true)
       
-      const type = consultationType === "telemedicine" ? "Telemedicine" : "In-Person Clinic";
-      const dt = format(selectedTimeSlot, "MMMM d, yyyy");
-      const tm = format(selectedTimeSlot, "h:mm a");
-
-      // Save appointment to new Postgres tables (+ fires Notification to Doctor portal)
-      if (!appointmentSaved) {
-        await fetch('/api/appointments', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({
-             doctorId: selectedDoctor.id,
-             doctorName: selectedDoctor.name,
-             specialty: `${selectedDoctor.specialty} (${selectedDoctor.subspecialty})`,
-             appointmentDate: dt,
-             appointmentTime: tm,
-             type: type,
-             fee: `₹${selectedDoctor.consultationFee}`
-          })
-        });
-
-        // Add locally to UI context
+      // Save appointment to medical history (Postgres synced)
+      if (selectedDoctor && selectedTimeSlot && !appointmentSaved) {
+        // Save to context
         addHistory({
           type: "Appointment",
           data: `Consultation — ${selectedDoctor.name}`,
@@ -635,10 +639,12 @@ export default function AppointmentsPage() {
             Appointment_ID: newAppointmentId,
             Doctor_Name: selectedDoctor.name,
             Specialty: `${selectedDoctor.specialty} (${selectedDoctor.subspecialty})`,
-            Date: dt,
-            Time: tm,
-            Type: type,
-            Location: selectedDoctor.hospital,
+            Date: format(selectedTimeSlot, "MMMM d, yyyy"),
+            Time: format(selectedTimeSlot, "h:mm a"),
+            Type: consultationType === "telemedicine" ? "Telemedicine" : "In-Person Clinic",
+            Location: consultationType === "telemedicine" ? "Microsoft Teams" : selectedDoctor.hospital,
+            Join_Link: meetLink || undefined,
+            Symptoms: patientSymptoms || "None specified",
             Fee: `₹${selectedDoctor.consultationFee}`
           }
         });
@@ -646,9 +652,7 @@ export default function AppointmentsPage() {
         setAppointmentSaved(true)
       }
       
-    } catch (err) {
-      console.error(err);
-    }
+    }, 1000)
   }
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -719,6 +723,10 @@ export default function AppointmentsPage() {
     doc.setFontSize(14)
     doc.text("Instructions", 20, 245)
     doc.setFontSize(10)
+
+    if (patientSymptoms) {
+      doc.text(`Reported Symptoms: ${patientSymptoms.substring(0, 100)}${patientSymptoms.length > 100 ? '...' : ''}`, 20, 190)
+    }
 
     if (consultationType === "telemedicine") {
       doc.text("1. You will receive a link to join the video consultation 15 minutes before the appointment.", 20, 255)
@@ -909,7 +917,7 @@ export default function AppointmentsPage() {
                   <div className="relative bg-gradient-to-br from-emerald-50 to-blue-50 p-6 flex items-center justify-center">
                     <div className="relative">
                       <Image
-                        src={doctor.image}
+                        src={doctor.image || "/placeholder.svg?height=150&width=150"}
                         alt={doctor.name}
                         width={128}
                         height={128}
@@ -1021,7 +1029,7 @@ export default function AppointmentsPage() {
             <div className="p-6 space-y-4">
                   <div className="flex items-center gap-4">
                     <Image
-                      src={selectedDoctor.image}
+                      src={selectedDoctor.image || "/placeholder.svg?height=150&width=150"}
                       alt={selectedDoctor.name}
                       width={64}
                       height={64}
@@ -1125,6 +1133,16 @@ export default function AppointmentsPage() {
                   </div>
 
                   <div className="space-y-2">
+                    <Label>Reason for Appointment (Symptoms)</Label>
+                    <textarea 
+                      className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                      placeholder="Briefly describe your symptoms or concern..."
+                      value={patientSymptoms}
+                      onChange={(e) => setPatientSymptoms(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
                     <Label>Upload Medical Records (Optional)</Label>
                     <div className="flex items-center justify-center w-full">
                       <label
@@ -1191,7 +1209,9 @@ export default function AppointmentsPage() {
         <DialogContent className="sm:max-w-md p-0 overflow-hidden">
           <DialogHeader className="p-6 pb-2">
             <DialogTitle>Appointment Confirmed!</DialogTitle>
-            <DialogDescription>Your appointment has been successfully scheduled.</DialogDescription>
+            <DialogDescription>
+              Your appointment is booked successfully. The doctor will send you an email shortly regarding the confirmation and all details.
+            </DialogDescription>
           </DialogHeader>
           
           <div className="relative">
@@ -1210,7 +1230,7 @@ export default function AppointmentsPage() {
                 <div className="rounded-lg bg-muted p-4 flex items-start gap-3">
                   <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0 bg-background">
                     <Image
-                      src={selectedDoctor.image}
+                      src={selectedDoctor.image || "/placeholder.svg?height=150&width=150"}
                       alt={selectedDoctor.name}
                       width={48}
                       height={48}
@@ -1257,7 +1277,7 @@ export default function AppointmentsPage() {
                 <div className="flex items-center gap-2 rounded-lg bg-blue-50 dark:bg-blue-900/20 p-3">
                   <AlertCircle className="h-4 w-4 text-blue-500 flex-shrink-0" />
                   <p className="text-xs text-blue-700 dark:text-blue-300">
-                    Please arrive 15 minutes before your appointment time. Don&apos;t forget to bring your medical records and ID proof.
+                    {consultationType === "telemedicine" ? "Please join via the Meeting Link at the time of appointment. Keep your medical records ready." : "Please arrive 15 minutes before your appointment time. Don't forget to bring your medical records and ID proof."}
                   </p>
                 </div>
 

@@ -1,39 +1,46 @@
 import { NextResponse } from 'next/server'
-import { query } from '@/lib/aws-database'
+import { getCollection, ObjectId } from '@/lib/mongodb'
+import type { IProfile, IMedicalHistory } from '@/database/mongodb-schema'
 
-// GET all analyses across all patients for doctor review
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
-    const patientId = searchParams.get('patientId') // optional filter
+    const patientId = searchParams.get('patientId')
 
-    let sql = `
-      SELECT
-        mh.id,
-        mh.data,
-        mh.details,
-        mh.date,
-        p.id AS patient_id,
-        p.full_name AS patient_name,
-        p.email AS patient_email,
-        p.date_of_birth,
-        p.gender,
-        p.contact_number
-      FROM medical_history mh
-      JOIN profiles p ON mh.user_id = p.id
-      WHERE mh.type = 'Analysis'
-    `
-    const params: string[] = []
+    const histCol = await getCollection<IMedicalHistory>('medical_history')
+    const profiles = await getCollection<IProfile>('profiles')
 
-    if (patientId) {
-      sql += ` AND p.id = $1`
-      params.push(patientId)
+    const filter: Record<string, unknown> = { type: 'Analysis' }
+    if (patientId && ObjectId.isValid(patientId)) {
+      filter.userId = new ObjectId(patientId)
     }
 
-    sql += ` ORDER BY mh.date DESC LIMIT 200`
+    const analyses = await histCol
+      .find(filter)
+      .sort({ date: -1 })
+      .limit(200)
+      .toArray()
 
-    const result = await query(sql, params)
-    return NextResponse.json(result.rows)
+    // Enrich with patient data
+    const enriched = await Promise.all(
+      analyses.map(async (a) => {
+        const patient = await profiles.findOne({ _id: a.userId })
+        return {
+          id: a._id!.toString(),
+          data: a.data,
+          details: a.details,
+          date: a.date,
+          patient_id: a.userId.toString(),
+          patient_name: patient?.fullName ?? 'Unknown',
+          patient_email: patient?.email ?? '',
+          date_of_birth: patient?.dateOfBirth,
+          gender: patient?.gender,
+          contact_number: patient?.contactNumber,
+        }
+      })
+    )
+
+    return NextResponse.json(enriched)
   } catch (error) {
     console.error('GET /api/doctor/analyses error:', error)
     return NextResponse.json({ error: 'Failed to fetch analyses' }, { status: 500 })

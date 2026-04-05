@@ -1,33 +1,42 @@
 import { NextResponse } from 'next/server'
-import { query } from '@/lib/aws-database'
+import { getCollection } from '@/lib/mongodb'
+import type { IProfile, IAppointment } from '@/database/mongodb-schema'
 
-// GET all appointments for the doctor dashboard
-export async function GET(request: Request) {
+export async function GET() {
   try {
-    // We join the profiles table to get the patient's full name, email, contact, etc.
-    const sql = `
-      SELECT
-        a.id,
-        a.patient_id,
-        a.doctor_name,
-        a.specialty,
-        a.appointment_date,
-        a.appointment_time,
-        a.status,
-        a.created_at,
-        p.full_name AS patient_name,
-        p.email AS patient_email,
-        p.contact_number AS patient_contact,
-        p.gender AS patient_gender,
-        p.city AS patient_city
-      FROM appointments a
-      JOIN profiles p ON a.patient_id = p.id
-      ORDER BY a.created_at DESC
-      LIMIT 100
-    `
+    const apptCol = await getCollection<IAppointment>('appointments')
+    const profiles = await getCollection<IProfile>('profiles')
 
-    const result = await query(sql)
-    return NextResponse.json(result.rows)
+    const appointments = await apptCol
+      .find({})
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .toArray()
+
+    const enriched = await Promise.all(
+      appointments.map(async (a) => {
+        const patient = await profiles.findOne({ _id: a.patientId })
+        return {
+          id: a._id!.toString(),
+          patient_id: a.patientId.toString(),
+          doctor_name: a.doctorName,
+          specialty: a.specialty,
+          appointment_date: a.appointmentDate,
+          appointment_time: a.appointmentTime,
+          status: a.status,
+          type: a.type,
+          fee: a.fee,
+          created_at: a.createdAt,
+          patient_name: patient?.fullName ?? 'Unknown',
+          patient_email: patient?.email ?? '',
+          patient_contact: patient?.contactNumber ?? '',
+          patient_gender: patient?.gender ?? '',
+          patient_city: patient?.city ?? '',
+        }
+      })
+    )
+
+    return NextResponse.json(enriched)
   } catch (error) {
     console.error('GET /api/doctor/appointments error:', error)
     return NextResponse.json({ error: 'Failed to fetch appointments' }, { status: 500 })

@@ -1,144 +1,132 @@
-import { type NextRequest, NextResponse } from "next/server"
+import { NextResponse } from 'next/server'
 import { currentUser } from '@clerk/nextjs/server'
-import { query } from '@/lib/aws-database'
-import { uploadAnalysisImage } from "@/lib/aws-s3"
+import { getCollection, ObjectId } from '@/lib/mongodb'
+import type { IProfile, ISkinAnalysis, IMedicalHistory } from '@/database/mongodb-schema'
+import { uploadAnalysisImage } from '@/lib/cloudinary'
 
-// ─── Disease / Risk lookup tables ────────────────────────────────────────────
 const DISEASE_INFO: Record<string, string> = {
-  akiec: "Actinic keratoses (precancerous patches)",
-  bcc:   "Basal cell carcinoma (common skin cancer)",
-  bkl:   "Benign keratosis (non-cancerous growth)",
-  df:    "Dermatofibroma (benign nodule)",
-  mel:   "Melanoma (serious skin cancer)",
-  nv:    "Melanocytic nevus (mole)",
-  vasc:  "Vascular lesion (blood vessel abnormality)",
-  carcinoma: "Carcinoma (malignant epithelial tumor)",
-  "Basal Cell Carcinoma": "Common skin cancer, usually curable",
-  "Melanoma": "Serious type of skin cancer",
-  "Squamous Cell Carcinoma": "Common form of skin cancer",
-  "Actinic Keratosis": "Precancerous skin patch"
+  akiec: 'Actinic keratoses (precancerous patches)',
+  bcc: 'Basal cell carcinoma (common skin cancer)',
+  bkl: 'Benign keratosis (non-cancerous growth)',
+  df: 'Dermatofibroma (benign nodule)',
+  mel: 'Melanoma (serious skin cancer)',
+  nv: 'Melanocytic nevus (mole)',
+  vasc: 'Vascular lesion (blood vessel abnormality)',
+  carcinoma: 'Carcinoma (malignant epithelial tumor)',
 }
 
-const RISK_LEVEL: Record<string, { risk: string; action: string }> = {
-  akiec:     { risk: "High",      action: "Consult a dermatologist for further evaluation and treatment options." },
-  bcc:       { risk: "High",      action: "Immediate medical consultation required for biopsy and treatment." },
-  bkl:       { risk: "Low",       action: "Generally benign, but monitor for changes. Consult a dermatologist if concerned." },
-  df:        { risk: "Low",       action: "Benign, usually no treatment needed. Consult if it grows or causes discomfort." },
-  mel:       { risk: "Very High", action: "Urgent medical consultation required — high malignancy risk." },
-  nv:        { risk: "Low",       action: "Common mole. Monitor for ABCDEs. Consult if any changes occur." },
-  vasc:      { risk: "Low",       action: "Usually benign. Consult a dermatologist for diagnosis if desired." },
-  carcinoma: { risk: "Very High", action: "Immediate medical consultation required — biopsy and treatment needed." },
-  default:   { risk: "Medium",    action: "Please consult a specialist." }
+const RISK_LEVEL: Record<string, { risk: string; stage: number; action: string }> = {
+  akiec: { risk: 'High', stage: 2, action: 'Consult a dermatologist within 2 weeks.' },
+  bcc: { risk: 'High', stage: 2, action: 'Immediate medical consultation required for biopsy.' },
+  bkl: { risk: 'Low', stage: 1, action: 'Generally benign — monitor for changes.' },
+  df: { risk: 'Low', stage: 1, action: 'Benign — no treatment usually needed.' },
+  mel: { risk: 'Very High', stage: 3, action: 'URGENT — immediate dermatologist consultation.' },
+  nv: { risk: 'Low', stage: 1, action: 'Common mole — monitor ABCDEs.' },
+  vasc: { risk: 'Medium', stage: 1, action: 'Dermatologist check-up recommended.' },
+  carcinoma: { risk: 'Very High', stage: 3, action: 'Immediate biopsy and treatment needed.' },
+  default: { risk: 'Medium', stage: 2, action: 'Please consult a specialist.' },
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(request: Request) {
   try {
     const user = await currentUser()
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    }
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const formData = await request.formData()
-    const file = formData.get("file") as File
-    const predictionRaw = formData.get("prediction") as string
-    
+    const file = formData.get('file') as File
+    const predictionRaw = formData.get('prediction') as string
+
     if (!file || !predictionRaw) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
     const data = JSON.parse(predictionRaw)
     const fileBuffer = Buffer.from(await file.arrayBuffer())
+    const primaryEmail = user.emailAddresses?.[0]?.emailAddress || ''
 
-    // ── Execute Save Process (same logic as before)
-    const savedInfo = await saveAnalysisToAWS(user, fileBuffer, file.type, file.name, data)
+    const profiles = await getCollection<IProfile>('profiles')
+    let profileDoc = await profiles.findOne({ $or: [{ clerkUserId: user.id }, { email: primaryEmail }] })
 
-    if (!savedInfo) {
-      return NextResponse.json({ error: "Database save failed completely — Timeout or internal error." }, { status: 500 })
-    }
-
-    return NextResponse.json({ success: true, savedData: savedInfo }, { status: 200 })
-
-  } catch (error) {
-    console.error("[save-analysis] error:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
-  }
-}
-
-// ─── Perform persist analysis to RDS + S3 ───────────────────────────────────
-async function saveAnalysisToAWS(user: any, fileBuffer: Buffer, mimeType: string, fileName: string, data: any) {
-  const primaryEmail = user.emailAddresses?.[0]?.emailAddress || ''
-  
-  try {
-    let profileRes = await query(
-      `SELECT id, full_name, date_of_birth FROM profiles WHERE cognito_user_id = $1 OR email = $2 LIMIT 1`,
-      [user.id, primaryEmail]
-    )
-
-    if (profileRes.rows.length === 0) {
+    if (!profileDoc) {
       const fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || primaryEmail.split('@')[0]
-      profileRes = await query(
-        `INSERT INTO profiles (cognito_user_id, email, full_name, role, is_active, is_onboarded)
-         VALUES ($1, $2, $3, 'patient', true, false)
-         ON CONFLICT (cognito_user_id) DO UPDATE SET email = $2
-         RETURNING id, full_name, date_of_birth`,
-        [user.id, primaryEmail, fullName]
-      )
+      const now = new Date()
+      const res = await profiles.insertOne({
+        clerkUserId: user.id, email: primaryEmail, fullName,
+        role: 'patient', isActive: true, isOnboarded: false,
+        createdAt: now, updatedAt: now,
+      })
+      profileDoc = await profiles.findOne({ _id: res.insertedId })
     }
 
-    const profile = profileRes.rows[0]
-    const dbProfileId = profile.id
-    
-    // Step 3: S3 Upload
+    const profileId = profileDoc!._id!
+
+    // Upload to Cloudinary
     let imageUrl = ''
     let imageKey = ''
     try {
-      const s3Result = await uploadAnalysisImage(dbProfileId, fileBuffer, mimeType)
-      imageUrl = s3Result.url
-      imageKey = s3Result.key
-    } catch (s3Err) {
-      console.error("[save-analysis] S3 fallback triggered");
+      const result = await uploadAnalysisImage(profileId.toString(), fileBuffer, file.type)
+      imageUrl = result.url
+      imageKey = result.key
+    } catch (err) {
+      console.error('[save-analysis] Cloudinary upload failed:', err)
     }
 
-    // Prepare specifics
     const predictionKey = (data.prediction || '').toLowerCase()
-    
-    // Find the correct risk logic fallback cleanly, handling both short acronyms and full names (like "Carcinoma")
-    let activeKey = Object.keys(RISK_LEVEL).find(k => k.toLowerCase() === predictionKey || predictionKey.includes(k.toLowerCase()));
-    
-    const riskData = RISK_LEVEL[activeKey || 'default'] || RISK_LEVEL['default']
-    const assessment = Object.keys(DISEASE_INFO).find(k => k.toLowerCase() === predictionKey || predictionKey.includes(k.toLowerCase())) 
-        ? DISEASE_INFO[activeKey || 'default'] 
-        : 'Detailed assessment required'
+    const matchedKey = Object.keys(RISK_LEVEL).find(
+      (k) => k.toLowerCase() === predictionKey || predictionKey.includes(k.toLowerCase())
+    )
+    const riskData = RISK_LEVEL[matchedKey || 'default']
+    const assessment = DISEASE_INFO[matchedKey || ''] || 'Detailed assessment required'
 
-    // Step 4: Medical History Insert
     const detailsObj = {
-      Patient_Name: profile.full_name || 'Patient',
+      Patient_Name: profileDoc!.fullName || 'Patient',
       Diagnosis: data.prediction,
       Confidence: `${(data.confidence * 100).toFixed(2)}%`,
       Risk_Level: riskData.risk,
+      Severity_Stage: riskData.stage,
       Assessment: assessment,
       Recommendation: riskData.action,
-      imageUrl: imageUrl,
-      analysis_time: new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' (IST)'
-    };
+      imageUrl,
+      analysis_time: new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' (IST)',
+    }
 
-    const newHistory = await query(
-      `INSERT INTO medical_history (user_id, type, data, details)
-       VALUES ($1, 'Analysis', $2, $3) RETURNING id`,
-      [dbProfileId, `Skin Analysis — ${data.prediction} Detected`, JSON.stringify(detailsObj)]
-    )
+    const now = new Date()
 
-    // Log technically
-    await query(
-      `INSERT INTO skin_analyses (user_id, image_url, image_key, prediction_class, confidence_score, risk_level, all_predictions)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [dbProfileId, imageUrl, imageKey, data.prediction, data.confidence * 100, riskData.risk, JSON.stringify(data.class_probabilities ?? {})]
-    ).catch(() => {});
+    // Insert medical history
+    const histCol = await getCollection<IMedicalHistory>('medical_history')
+    const histResult = await histCol.insertOne({
+      userId: profileId,
+      type: 'Analysis',
+      data: `Skin Analysis — ${data.prediction} Detected`,
+      details: detailsObj,
+      date: now,
+      createdAt: now,
+      updatedAt: now,
+    })
 
-    return { ...detailsObj, id: newHistory.rows[0].id };
+    // Insert skin analysis record
+    const analysisCol = await getCollection<ISkinAnalysis>('skin_analyses')
+    await analysisCol.insertOne({
+      userId: profileId,
+      imageUrl,
+      imageKey,
+      predictionClass: data.prediction,
+      predictionName: data.prediction_name || data.prediction,
+      confidenceScore: data.confidence * 100,
+      riskLevel: riskData.risk as ISkinAnalysis['riskLevel'],
+      severityStage: riskData.stage as 1 | 2 | 3,
+      allPredictions: data.class_probabilities ?? {},
+      pdfReportUrl: data.pdf_report_url || undefined,
+      azureQualityScore: data.azure_quality_score,
+      preprocessingApplied: data.preprocessing_applied || [],
+      doctorReviewed: false,
+      followUpRequired: false,
+      createdAt: now,
+    })
 
-  } catch (err) {
-    console.error(`[saveAnalysisToAWS] Critical database error (timeout/unreachable):`, err)
-    return null;
+    return NextResponse.json({ success: true, savedData: { ...detailsObj, id: histResult.insertedId.toString() } })
+  } catch (error) {
+    console.error('[save-analysis] error:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
