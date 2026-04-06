@@ -3,4 +3,3 @@
 # This API should be deployed separately (e.g. AWS EC2, Render)
 /api
 /scripts
-/database
