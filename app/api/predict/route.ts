@@ -42,6 +42,9 @@ export async function POST(request: NextRequest) {
     const isJson = contentType.includes('application/json')
 
     if (!response.ok) {
+      if (response.status === 503) {
+        return NextResponse.json({ error: 'AI Brain is waking up (Cold Start). Please wait around 30 seconds and try again.' }, { status: 503 })
+      }
       if (isJson) {
         const errorData = await response.json()
         return NextResponse.json({ error: errorData.detail || 'Failed to process image' }, { status: response.status })
@@ -55,7 +58,37 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid AI response format', details: bodyText.slice(0, 200) }, { status: 502 })
     }
 
-    const data = await response.json()
+    let data = await response.json()
+
+    // Map Hugging Face response format to the expected format if prediction is an object
+    if (data.prediction && typeof data.prediction === 'object' && data.prediction !== null) {
+      const hfPredName = data.prediction.name || 'Unknown'
+      const lowerName = hfPredName.toLowerCase()
+      
+      let mappedPrediction = 'nv' // default to benign nevus code
+      if (lowerName.includes('melanoma') || lowerName.includes('mel')) mappedPrediction = 'mel'
+      else if (lowerName.includes('basal') || lowerName.includes('bcc')) mappedPrediction = 'bcc'
+      else if (lowerName.includes('actinic') || lowerName.includes('akiec')) mappedPrediction = 'akiec'
+      else if (lowerName.includes('carcinoma')) mappedPrediction = 'carcinoma'
+      else if (lowerName.includes('vascular') || lowerName.includes('vasc')) mappedPrediction = 'vasc'
+      else if (lowerName.includes('benign')) mappedPrediction = 'bkl'
+
+      const classProbs: Record<string, number> = {}
+      if (Array.isArray(data.top_predictions)) {
+         data.top_predictions.forEach((t: any) => { classProbs[t.label] = t.confidence })
+      }
+
+      data = {
+         ...data,
+         prediction: mappedPrediction,
+         prediction_name: hfPredName,
+         confidence: data.prediction.confidence !== undefined ? data.prediction.confidence : 0.8,
+         class_probabilities: classProbs,
+         risk_level: data.prediction.severity === 'Severe' ? 'High' : 'Low',
+         severity_stage: data.prediction.severity === 'Severe' ? 3 : 1,
+         heatmap_image: data.heatmap_image || '', 
+      }
+    }
 
     // Persist to MongoDB + Cloudinary if user is logged in
     if (user && file) {
@@ -143,7 +176,7 @@ export async function POST(request: NextRequest) {
     if (error instanceof Error) {
       if (error.message.includes('ECONNREFUSED')) {
         return NextResponse.json(
-          { error: 'AI service not available. Run: cd api && python -m uvicorn main:app --reload' },
+          { error: 'AI service connection failed. The Hugging Face backend might be temporarily unreachable.' },
           { status: 503 }
         )
       }

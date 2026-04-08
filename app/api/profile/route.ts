@@ -12,26 +12,41 @@ export async function GET() {
     const { userId } = await auth()
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+    // Always try to get a Clerk user to use as fallback
+    const clerkUser = await currentUser()
+    const clerkEmail = clerkUser?.emailAddresses?.[0]?.emailAddress ?? ''
+    const clerkName = `${clerkUser?.firstName ?? ''} ${clerkUser?.lastName ?? ''}`.trim() || clerkEmail.split('@')[0]
+
     let profile
     try {
       profile = await getUserProfile(userId)
     } catch (dbErr) {
-      if (isDbError(dbErr)) {
-        const clerkUser = await currentUser()
-        const email = clerkUser?.emailAddresses?.[0]?.emailAddress ?? ''
-        const fullName = `${clerkUser?.firstName ?? ''} ${clerkUser?.lastName ?? ''}`.trim() || email.split('@')[0]
-        console.warn('[Profile API] DB unreachable — returning Clerk fallback for', userId)
-        return NextResponse.json({
-          userId, email, fullName,
-          avatarUrl: clerkUser?.imageUrl ?? null,
-          role: 'patient', isActive: true, isOnboarded: true,
-          _dbOffline: true,
-        }, { status: 200 })
-      }
-      throw dbErr
+      // Any DB failure (missing env, timeout, auth error) — return Clerk fallback
+      // so the user is never blocked from accessing the app
+      console.warn('[Profile API] DB error — returning Clerk fallback:', (dbErr as Error)?.message)
+      return NextResponse.json({
+        userId,
+        email: clerkEmail,
+        fullName: clerkName,
+        avatarUrl: clerkUser?.imageUrl ?? null,
+        role: 'patient',
+        isActive: true,
+        isOnboarded: true,
+        _dbOffline: true,
+      }, { status: 200 })
     }
 
-    if (!profile) return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
+    // Profile doesn't exist yet — return 404 so onboarding shows the form
+    if (!profile) {
+      // Try to create the profile automatically using Clerk data
+      try {
+        const { ensureUserProfileExists } = await import('@/lib/profile-sync')
+        profile = await ensureUserProfileExists(userId, clerkEmail, clerkName)
+      } catch {
+        // Auto-create failed — return 404 so onboarding form still shows
+        return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
+      }
+    }
 
     return NextResponse.json({
       userId: profile.userId, email: profile.email, fullName: profile.fullName,
@@ -43,7 +58,22 @@ export async function GET() {
       createdAt: profile.createdAt, updatedAt: profile.updatedAt,
     })
   } catch (error) {
-    console.error('GET /api/profile error:', error)
+    console.error('GET /api/profile unexpected error:', error)
+    // Last resort — try to return Clerk data rather than a hard 500
+    try {
+      const { userId } = await auth()
+      const clerkUser = await currentUser()
+      if (clerkUser && userId) {
+        const email = clerkUser.emailAddresses?.[0]?.emailAddress ?? ''
+        const fullName = `${clerkUser.firstName ?? ''} ${clerkUser.lastName ?? ''}`.trim() || email.split('@')[0]
+        return NextResponse.json({
+          userId, email, fullName,
+          avatarUrl: clerkUser.imageUrl ?? null,
+          role: 'patient', isActive: true, isOnboarded: true,
+          _dbOffline: true,
+        }, { status: 200 })
+      }
+    } catch { /* ignore */ }
     return NextResponse.json({ error: 'Failed to fetch profile' }, { status: 500 })
   }
 }

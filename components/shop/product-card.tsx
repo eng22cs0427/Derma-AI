@@ -25,8 +25,8 @@ export function ProductCard({ product, view, onAddToCart, onAddToWishlist, onSha
 
   return (
     <div className={cn(
-      "group relative rounded-lg border bg-card text-card-foreground shadow-sm transition-all hover:shadow-md hover:border-emerald-200",
-      view === "list" && "flex flex-row"
+      "group relative rounded-lg border bg-card text-card-foreground shadow-sm transition-all hover:shadow-md hover:border-emerald-200 flex flex-col",
+      view === "list" && "sm:flex-row"
     )}>
       {/* Discount Badge */}
       {product.discount && (
@@ -44,8 +44,8 @@ export function ProductCard({ product, view, onAddToCart, onAddToWishlist, onSha
 
       {/* Image */}
       <div className={cn(
-        "relative overflow-hidden rounded-t-lg cursor-pointer",
-        view === "list" ? "w-48 h-32" : "aspect-square"
+        "relative overflow-hidden rounded-t-lg sm:rounded-l-lg sm:rounded-tr-none cursor-pointer flex-shrink-0",
+        view === "list" ? "w-full h-48 sm:w-48 sm:h-auto sm:aspect-square" : "aspect-square w-full"
       )} onClick={onClick}>
         <Image
           src={product.image}
@@ -96,7 +96,7 @@ export function ProductCard({ product, view, onAddToCart, onAddToWishlist, onSha
         </div>
 
         {/* Action Buttons */}
-        <div className="flex gap-2 pt-2">
+        <div className="flex flex-wrap sm:flex-nowrap gap-2 pt-2">
           <Button 
             size="sm" 
             className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"

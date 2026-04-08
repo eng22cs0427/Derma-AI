@@ -138,7 +138,7 @@ export function Checkout({ cart, total, onSuccess }: CheckoutProps) {
                     <RadioGroup
                       onValueChange={field.onChange}
                       defaultValue={field.value}
-                      className="grid grid-cols-3 gap-4"
+                      className="grid grid-cols-1 sm:grid-cols-3 gap-4"
                     >
                       <div>
                         <RadioGroupItem value="card" id="card" className="peer sr-only" />

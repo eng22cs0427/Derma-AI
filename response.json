@@ -1,0 +1,1 @@
+{"status":"uncertain","prediction":{"code":null,"name":"Unknown_Normal","severity":"N/A","confidence":1.0},"top_predictions":[{"label":"Unknown_Normal","confidence":1.0},{"label":"Benign_tumors","confidence":0.0},{"label":"Bullous","confidence":0.0}]}

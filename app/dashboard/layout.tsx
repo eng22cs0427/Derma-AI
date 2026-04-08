@@ -27,12 +27,14 @@ export default async function DashboardLayout({
 
   let isOnboarded = false
   let isAdmin = false
+  let isDoctor = false
 
   try {
     // 1. Ensure user exists inside AWS RDS Postgres database
     const dbProfile = await ensureUserProfileExists(user.id, primaryEmail, fullName)
     isOnboarded = Boolean(dbProfile.isOnboarded)
     isAdmin = dbProfile.role === 'admin'
+    isDoctor = dbProfile.role === 'doctor'
   } catch (error) {
     console.error("Failed to sync profile to database inside layout:", error)
   }
@@ -41,6 +43,11 @@ export default async function DashboardLayout({
   // Next.js redirect must be called outside try/catch blocks!
   if (!isOnboarded) {
     redirect("/onboarding")
+  }
+
+  // 3. Auto-redirect doctors to doctor dashboard if they land here
+  if (isDoctor) {
+    redirect("/doctor-dashboard")
   }
 
   return (

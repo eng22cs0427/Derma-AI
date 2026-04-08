@@ -51,7 +51,7 @@ export function ShopCart({ open, onClose, items, setItems }: ShopCartProps) {
 
   return (
     <Sheet open={open} onOpenChange={onClose}>
-      <SheetContent className="flex w-full flex-col sm:max-w-lg">
+      <SheetContent className="flex w-full flex-col sm:max-w-lg p-4 sm:p-6 overflow-y-auto">
         <SheetHeader>
           <SheetTitle>Shopping Cart</SheetTitle>
           <SheetDescription>Review your items before checkout</SheetDescription>
@@ -79,9 +79,9 @@ export function ShopCart({ open, onClose, items, setItems }: ShopCartProps) {
                         initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: -20 }}
-                        className="flex gap-4"
+                        className="flex flex-row gap-3 sm:gap-4 border-b sm:border-b-0 pb-4 sm:pb-0"
                       >
-                        <div className="h-24 w-24 flex-none overflow-hidden rounded-md">
+                        <div className="h-20 w-20 sm:h-24 sm:w-24 flex-none overflow-hidden rounded-md">
                           <img
                             src={item.image || "/placeholder.svg"}
                             alt={item.name}
@@ -93,8 +93,8 @@ export function ShopCart({ open, onClose, items, setItems }: ShopCartProps) {
                             <h4 className="font-medium">{item.name}</h4>
                             <p className="text-sm text-muted-foreground">₹{item.price}</p>
                           </div>
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2 mt-2">
+                            <div className="flex items-center gap-1 sm:gap-2">
                               <Button
                                 variant="outline"
                                 size="icon"

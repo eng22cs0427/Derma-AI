@@ -1,3 +1,6 @@
+import sys
+sys.exit("The local model has been deprecated in favor of the Hugging Face API. Do not run this script.")
+
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse

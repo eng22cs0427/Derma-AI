@@ -2,6 +2,9 @@
 DermaSense AI FastAPI Backend v2.0
 Full pipeline: Preprocessing → Azure Vision → EfficientNet-B4 → Grad-CAM → PDF Report
 """
+import sys
+sys.exit("The local model has been deprecated in favor of the Hugging Face API. Do not run this script.")
+
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel

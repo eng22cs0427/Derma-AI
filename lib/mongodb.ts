@@ -1,7 +1,6 @@
 /**
  * MongoDB Atlas Connection Singleton
- * Replaces: lib/aws-database.ts (PostgreSQL / AWS RDS)
- * Free tier: MongoDB Atlas M0 (512MB) + $50 credit
+ * Optimised for Vercel serverless — caches client across warm invocations.
  */
 import { MongoClient, Db, Collection, ObjectId } from 'mongodb'
 
@@ -17,28 +16,37 @@ declare global {
   var __mongoClient: MongoClient | undefined
 }
 
+// Module-level cache — survives warm serverless re-invocations in production
+let _moduleClient: MongoClient | undefined
+
 async function connect(): Promise<Db> {
-  if (global.__mongoClient) {
-    return global.__mongoClient.db(DB_NAME)
+  // Use cached client (global for dev HMR, module-level for prod serverless)
+  const cached = global.__mongoClient ?? _moduleClient
+  if (cached) {
+    return cached.db(DB_NAME)
   }
 
-  const client = new MongoClient(uri || '', {
+  if (!uri) {
+    throw new Error('MONGODB_URI environment variable is not set. Add it to your Vercel project settings.')
+  }
+
+  const client = new MongoClient(uri, {
     maxPoolSize: 10,
-    minPoolSize: 0,
-    serverSelectionTimeoutMS: 5000,
+    minPoolSize: 1,
+    serverSelectionTimeoutMS: 8000,
     connectTimeoutMS: 10000,
-    socketTimeoutMS: 10000,
+    socketTimeoutMS: 45000,
   })
 
   await client.connect()
 
-  if (process.env.NODE_ENV !== 'production') {
-    global.__mongoClient = client
-  }
+  // Cache in both global (dev) AND module-level (prod) so Vercel keeps it warm
+  global.__mongoClient = client
+  _moduleClient = client
 
   const db = client.db(DB_NAME)
 
-  // Ensure indexes on first connect
+  // Ensure indexes on first connect (non-fatal)
   try {
     await ensureIndexes(db)
   } catch {
