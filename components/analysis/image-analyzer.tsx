@@ -2,805 +2,735 @@
 
 import type React from "react"
 import { useState, useRef } from "react"
-import { 
-  Upload, 
-  X, 
-  AlertCircle, 
-  CheckCircle2, 
-  Loader2, 
-  Stethoscope,
-  AlertTriangle,
-  Volume2,
-  Download,
-  Clock,
-  Brain
+import {
+  Upload, X, AlertCircle, CheckCircle2, Loader2, Stethoscope,
+  AlertTriangle, Volume2, Download, Clock, Brain, ChevronRight,
+  Activity, Eye, MapPin, Microscope, ShieldAlert, Zap
 } from "lucide-react"
 import Image from "next/image"
 import { toast } from "sonner"
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-// Add medical history context import
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useMedicalHistory } from "@/contexts/MedicalHistoryContext"
+import { BodyPartSelector } from "@/components/analysis/body-part-selector"
+import { CameraCapture } from "@/components/analysis/camera-capture"
+import { DISEASE_DB, BODY_PARTS } from "@/lib/skin-disease-db"
 
 const COLORS = ['#4ade80', '#facc15', '#f97316', '#ef4444', '#60a5fa', '#a78bfa', '#f472b6']
 
-// Doctor specialist mapping for different conditions
-const DOCTOR_MAP: Record<string, string[]> = {
-  akiec: ['Dr. Meera Iyer', 'Dr. Rohan Desai'],
-  bcc: ['Dr. Shalini Verma', 'Dr. Ayaan Kapoor'],
-  bkl: ['Dr. Anjali Nair', 'Dr. Sunil Menon'],
-  df: ['Dr. Ravi Nandakumar', 'Dr. Nisha Shetty'],
-  mel: ['Dr. Arvind Krishnan', 'Dr. Reema Gupta'],
-  nv: ['Dr. Karthik Reddy', 'Dr. Sneha Sharma'],
-  vasc: ['Dr. Priya Mehta', 'Dr. Rajiv Bhatia'],
-  carcinoma: ['Dr. Shalini Verma', 'Dr. Ayaan Kapoor']
-}
-
-const DISEASE_INFO: Record<string, string> = {
-  akiec: "Actinic keratoses are rough, scaly patches caused by long-term sun exposure. They are considered precancerous and may develop into squamous cell carcinoma.",
-  bcc: "Basal cell carcinoma is the most common type of skin cancer. It's usually caused by UV exposure and grows slowly, rarely spreading.",
-  bkl: "Benign keratosis includes various non-cancerous skin growths such as seborrheic keratoses. Generally harmless.",
-  df: "Dermatofibroma is a common benign skin nodule, often arising due to minor skin injuries or insect bites.",
-  mel: "Melanoma is the most serious type of skin cancer. It develops from melanocytes and can spread rapidly if not detected early.",
-  nv: "Melanocytic nevus (mole) is a benign skin lesion composed of pigment-producing cells. While mostly harmless, some can become cancerous.",
-  vasc: "Vascular lesions are abnormalities of blood vessels that appear as red or purple marks. Most are harmless but should be observed.",
-  carcinoma: "Carcinoma is a type of cancer that starts in cells that make up the skin or the tissue lining organs. Early detection and treatment significantly improve outcomes."
-}
-
-const PRECAUTIONS: Record<string, string[]> = {
-  mel: ["Regularly use broad-spectrum sunscreen.", "Avoid tanning beds.", "Schedule routine skin checks.", "Wear protective clothing outdoors."],
-  bcc: ["Protect your skin from sun exposure.", "Check for new or changing lesions.", "Seek early evaluation for suspicious spots."],
-  vasc: ["Avoid trauma to the skin.", "Manage blood pressure and vascular health.", "Consult a specialist if changes occur."],
-  carcinoma: ["Use sunscreen daily with SPF 30 or higher.", "Perform regular skin self-examinations.", "Avoid tanning beds completely.", "Wear protective clothing and seek shade."]
-}
-
-// Common symptoms for different skin conditions
-const SYMPTOMS: Record<string, string[]> = {
-  mel: ["Irregular moles", "Changing color or border", "Asymmetry", "Bleeding or crusting"],
-  bcc: ["Pearly bump", "Flat scar-like area", "Open sores that don't heal"],
-  vasc: ["Red-purple spots", "Painless lesion", "Occasional swelling"],
-  akiec: ["Rough, scaly patches", "Redness", "Sometimes itching or burning", "Persistent dryness"],
-  df: ["Small, firm bump", "Pink to light brown color", "Slight dimpling", "Mostly painless"],
-  nv: ["Well-defined border", "Even coloration", "Round or oval shape", "Generally symmetrical"],
-  carcinoma: ["Non-healing sore", "Reddish patch", "Shiny bump or nodule", "Growth with elevated rolled border"]
-}
-
-// Treatment options for different conditions
-const TREATMENTS: Record<string, string[]> = {
-  mel: ["Surgical removal", "Immunotherapy", "Targeted therapy", "Chemotherapy (advanced cases)"],
-  bcc: ["Cryotherapy", "Mohs surgery", "Topical medications", "Photodynamic therapy"],
-  vasc: ["Observation", "Laser treatment", "Sclerotherapy", "Compression therapy"],
-  akiec: ["Cryotherapy", "Topical treatments", "Photodynamic therapy", "Curettage and electrodesiccation"],
-  df: ["Observation", "Surgical removal if desired", "Cryotherapy", "Laser therapy"],
-  nv: ["Regular monitoring", "Surgical removal if suspicious", "Shave removal", "Punch excision"],
-  carcinoma: ["Mohs surgery", "Radiation therapy", "Immunotherapy", "Targeted drug therapy"]
-}
-
-// Add this additional data mapping for risk levels
-const RISK_LEVEL: Record<string, { risk: string; action: string }> = {
-  akiec: { risk: 'High', action: 'Consult a dermatologist to monitor or treat early signs of skin cancer.' },
-  bcc: { risk: 'Medium', action: 'Seek evaluation for potential treatment even if non-urgent.' },
-  bkl: { risk: 'Low', action: 'Monitor but no immediate treatment needed.' },
-  df: { risk: 'Low', action: 'Benign condition. No treatment typically required.' },
-  mel: { risk: 'Very High', action: 'Seek immediate medical attention. This condition can be life-threatening.' },
-  nv: { risk: 'Medium', action: 'Have it evaluated if it changes in size or color.' },
-  vasc: { risk: 'Low', action: 'No treatment usually necessary unless aesthetic or symptomatic.' },
-  carcinoma: { risk: 'Very High', action: 'Seek immediate medical attention. This condition requires specialist care.' }
-}
-
-type PredictionResult = {
+// Typed result shape returned from /api/predict-azure
+interface SkinResult {
   prediction: string
+  prediction_name: string
+  icd10: string
   confidence: number
+  severity: string
+  severity_label: string
+  urgency: string
+  message?: string
+  fitzpatrick_type: string
+  skin_tone: string
+  abcde: Record<string, string | string[]>
+  lesion_morphology: string
+  location: string
+  clinical_notes: string
+  differential_diagnoses: string[]
   class_probabilities: Record<string, number>
-  heatmap_image: string
-  details?: {
-    name: string
-    emoji: string
-    risk: string
-    urgency: string
-    info: string
-    action: string
-    color: string
+  azure_quality_score: number
+  needs_doctor_review: boolean
+  engines_used: Record<string, boolean>
+  body_part: string
+  body_part_matches: boolean
+  symptoms: string[]
+  treatments: string[]
+  precautions: string[]
+  specialists: string[]
+  error?: string
+}
+
+type Step = 'SELECT_BODY_PART' | 'CAMERA' | 'ANALYZING' | 'RESULT'
+
+const ANALYSIS_STEPS = [
+  { label: 'Verifying body part match', progress: 20 },
+  { label: 'Azure Vision — checking image quality', progress: 45 },
+  { label: 'ML Model — classifying skin lesion', progress: 68 },
+  { label: 'GPT-4o Vision — deep medical reasoning', progress: 88 },
+  { label: 'Fusion engine — generating your report', progress: 100 },
+]
+
+function SeverityBadge({ severity }: { severity: string }) {
+  const cfg: Record<string, { bg: string; text: string; border: string; label: string }> = {
+    Critical: { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-700 dark:text-red-300', border: 'border-red-200 dark:border-red-800', label: '🔴 Critical' },
+    High:     { bg: 'bg-orange-100 dark:bg-orange-900/30', text: 'text-orange-700 dark:text-orange-300', border: 'border-orange-200 dark:border-orange-800', label: '🟠 High' },
+    Moderate: { bg: 'bg-yellow-100 dark:bg-yellow-900/30', text: 'text-yellow-700 dark:text-yellow-300', border: 'border-yellow-200 dark:border-yellow-800', label: '🟡 Moderate' },
+    Low:      { bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-700 dark:text-blue-300', border: 'border-blue-200 dark:border-blue-800', label: '🔵 Low' },
+    None:     { bg: 'bg-emerald-100 dark:bg-emerald-900/30', text: 'text-emerald-700 dark:text-emerald-300', border: 'border-emerald-200 dark:border-emerald-800', label: '✅ None' },
   }
+  const s = cfg[severity] || cfg['Low']
+  return (
+    <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-bold border ${s.bg} ${s.text} ${s.border}`}>
+      {s.label}
+    </span>
+  )
+}
+
+function ABCDEPanel({ abcde }: { abcde: Record<string, string | string[]> }) {
+  const criteria = [
+    { key: 'A', label: 'Asymmetry', value: abcde.asymmetry as string, danger: (abcde.asymmetry as string)?.toLowerCase().includes('asymmetric') },
+    { key: 'B', label: 'Border', value: abcde.border as string, danger: (abcde.border as string)?.toLowerCase().includes('irregular') },
+    { key: 'C', label: 'Color', value: Array.isArray(abcde.color) ? (abcde.color as string[]).join(', ') : abcde.color as string, danger: Array.isArray(abcde.color) && (abcde.color as string[]).length > 2 },
+    { key: 'D', label: 'Diameter', value: abcde.diameter_estimate as string, danger: (abcde.diameter_estimate as string)?.includes('>6') || (abcde.diameter_estimate as string)?.includes('>10') },
+    { key: 'E', label: 'Evolution', value: abcde.evolution_indicators as string, danger: false },
+  ]
+  return (
+    <div className="space-y-2">
+      {criteria.map(c => (
+        <div key={c.key} className={`flex items-start gap-3 p-3 rounded-lg border ${c.danger ? 'bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800' : 'bg-gray-50 border-gray-200 dark:bg-gray-800 dark:border-gray-700'}`}>
+          <div className={`w-7 h-7 flex-shrink-0 rounded-full flex items-center justify-center text-sm font-bold ${c.danger ? 'bg-red-200 text-red-700 dark:bg-red-800 dark:text-red-200' : 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300'}`}>
+            {c.key}
+          </div>
+          <div className="flex-1">
+            <p className={`text-xs font-semibold ${c.danger ? 'text-red-600 dark:text-red-400' : 'text-gray-600 dark:text-gray-400'}`}>{c.label}</p>
+            <p className="text-sm text-gray-800 dark:text-gray-200">{c.value || 'Unable to assess'}</p>
+          </div>
+          <span>{c.danger ? '⚠️' : '✅'}</span>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 export function ImageAnalyzer() {
-  const [selectedImage, setSelectedImage] = useState<string | null>(null)
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [fileName, setFileName] = useState<string>("")
+  const [step, setStep] = useState<Step>('SELECT_BODY_PART')
+  const [bodyPart, setBodyPart] = useState<string>('')
+  const [capturedFile, setCapturedFile] = useState<File | null>(null)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
-  const [result, setResult] = useState<PredictionResult | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [analysisSaved, setAnalysisSaved] = useState(false) // Add this state variable
+  const [analysisStepIdx, setAnalysisStepIdx] = useState(0)
+  const [result, setResult] = useState<SkinResult | null>(null)
+  const [analysisSaved, setAnalysisSaved] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const analysisRef = useRef<HTMLDivElement>(null)
-
-  // Add medical history context
   const { refreshHistory } = useMedicalHistory()
 
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const bodyPartInfo = BODY_PARTS.find(p => p.id === bodyPart)
+
+  // ── Step Indicator ───────────────────────────────────────────────────────
+  const STEPS_DEF = [
+    { id: 'SELECT_BODY_PART', label: 'Body Part' },
+    { id: 'CAMERA', label: 'Scan' },
+    { id: 'ANALYZING', label: 'Analyze' },
+    { id: 'RESULT', label: 'Results' },
+  ]
+  const currentStepIdx = STEPS_DEF.findIndex(s => s.id === step)
+
+  // ── Handle body part selection ───────────────────────────────────────────
+  const handleBodyPartSelect = (part: string) => {
+    setBodyPart(part)
+    setStep('CAMERA')
+    setCapturedFile(null)
+    setPreviewUrl(null)
+    setResult(null)
+    setAnalysisSaved(false)
+  }
+
+  // ── Handle camera/upload capture ─────────────────────────────────────────
+  const handleCaptured = (file: File) => {
+    setCapturedFile(file)
+    const url = URL.createObjectURL(file)
+    setPreviewUrl(url)
+    runAnalysis(file)
+  }
+
+  // ── Upload handler ───────────────────────────────────────────────────────
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-
-    // Check file type
-    const validTypes = ["image/jpeg", "image/png", "image/jpg"]
-    if (!validTypes.includes(file.type)) {
-      toast.error("Invalid file type", {
-        description: "Please upload a JPEG or PNG image.",
-      })
+    if (!['image/jpeg', 'image/png', 'image/jpg'].includes(file.type)) {
+      toast.error('Please upload a JPEG or PNG image.')
       return
     }
-
-    // Check file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("File too large", {
-        description: "Please upload an image smaller than 5MB.",
-      })
+    if (file.size > 8 * 1024 * 1024) {
+      toast.error('File too large — please keep it under 8MB.')
       return
     }
-    setSelectedFile(file)
-
-    const reader = new FileReader()
-    reader.onload = () => {
-      setSelectedImage(reader.result as string)
-    }
-    reader.readAsDataURL(file)
-    setResult(null)
-    setError(null)
+    handleCaptured(file)
   }
 
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    const file = e.dataTransfer.files?.[0]
-    if (!file) return
-
-    // Check file type
-    const validTypes = ["image/jpeg", "image/png", "image/jpg"]
-    if (!validTypes.includes(file.type)) {
-      toast.error("Invalid file type", {
-        description: "Please upload a JPEG or PNG image.",
-      })
-      return
-    }
-
-    setFileName(file.name)
-    setSelectedFile(file)
-
-    const reader = new FileReader()
-    reader.onload = () => {
-      setSelectedImage(reader.result as string)
-    }
-    reader.readAsDataURL(file)
-    setResult(null)
-    setError(null)
-  }
-
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault()
-  }
-
-  const handleAnalyze = async () => {
-    if (!selectedFile) return
-
+  // ── 3-engine analysis ────────────────────────────────────────────────────
+  const runAnalysis = async (file: File) => {
+    setStep('ANALYZING')
     setIsAnalyzing(true)
-    setError(null)
-    setAnalysisSaved(false) // Reset saved state
+    setAnalysisSaved(false)
+
+    // Animate progress steps
+    let idx = 0
+    const stepInterval = setInterval(() => {
+      idx++
+      if (idx < ANALYSIS_STEPS.length - 1) setAnalysisStepIdx(idx)
+      else clearInterval(stepInterval)
+    }, 1400)
 
     try {
-      // Create FormData and append the file directly
       const formData = new FormData()
-      formData.append("file", selectedFile)
+      formData.append('file', file)
+      formData.append('bodyPart', bodyPart || 'other')
 
-      // Send to API
-      const res = await fetch("/api/predict", {
-        method: "POST",
-        body: formData,
-      })
+      const res = await fetch('/api/predict-azure', { method: 'POST', body: formData })
+
+      clearInterval(stepInterval)
+      setAnalysisStepIdx(ANALYSIS_STEPS.length - 1)
 
       if (!res.ok) {
-        const errorData = await res.json()
-        throw new Error(errorData.error || "Failed to analyze image")
+        const errData = await res.json()
+        throw new Error(errData.error || 'Analysis failed')
       }
 
       const data = await res.json()
       setResult(data)
-
-      // Refresh medical history to include the new analysis saved by the server
       refreshHistory()
-      setAnalysisSaved(true) // Mark as saved
+      setAnalysisSaved(true)
 
-      // Show success toast
-      if (data.prediction === "Carcinoma") {
-        toast.error("Analysis Complete", {
-          description: `Prediction: ${data.prediction} with ${(data.confidence * 100).toFixed(2)}% confidence`,
+      await new Promise(r => setTimeout(r, 800))
+      setStep('RESULT')
+
+      if (data.severity === 'Critical') {
+        toast.error('Analysis Complete — Critical condition detected', {
+          description: `${data.prediction_name} — ${(data.confidence * 100).toFixed(1)}% confidence`,
         })
+      } else if (data.prediction === 'healthy') {
+        toast.success('Analysis Complete — Healthy Skin!', { description: 'No significant skin disease detected.' })
       } else {
-        toast.success("Analysis Complete", {
-          description: `Prediction: ${data.prediction} with ${(data.confidence * 100).toFixed(2)}% confidence`,
-        })
+        toast.success('Analysis Complete', { description: `${data.prediction_name} — ${(data.confidence * 100).toFixed(1)}% confidence` })
       }
     } catch (err) {
-      toast.error("Analysis Failed", {
-        description: err instanceof Error ? err.message : "An unknown error occurred",
-      })
+      clearInterval(stepInterval)
+      toast.error('Analysis Failed', { description: err instanceof Error ? err.message : 'Please try again.' })
+      setStep('CAMERA')
     } finally {
       setIsAnalyzing(false)
     }
   }
 
-  const resetAnalysis = () => {
-    setSelectedImage(null)
-    setSelectedFile(null)
-    setFileName("")
+  const resetAll = () => {
+    setStep('SELECT_BODY_PART')
+    setBodyPart('')
+    setCapturedFile(null)
+    setPreviewUrl(null)
     setResult(null)
-    setError(null)
-    setAnalysisSaved(false) // Reset saved state
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ""
-    }
+    setAnalysisSaved(false)
+    setAnalysisStepIdx(0)
+    if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
-  // Update the PDF export function with Carcino branding
-  const exportToPDF = async () => {
-    if (analysisRef.current) {
-      const { default: html2pdf } = await import('html2pdf.js')
-
-      // Define types for html2pdf options
-      interface Html2PdfOptions {
-        margin: [number, number, number, number];
-        filename: string;
-        html2canvas: { scale: number };
-        jsPDF: { unit: string; format: string; orientation: string };
-        pagebreak: { mode: string[] };
-      }
-      
-      // Define type for PDF object
-      interface PdfDocument {
-        internal: {
-          getNumberOfPages: () => number;
-        };
-        setPage: (pageNum: number) => void;
-        setFontSize: (size: number) => void;
-        setTextColor: (color: number) => void;
-        text: (text: string, x: number, y: number, options?: { angle: number }) => void;
-      }
-
-      // Configure and generate PDF
-      html2pdf()
-        .set({
-          margin: [0.5, 0.5, 1, 0.5],
-          filename: 'Carcino_AI_Analysis.pdf',
-          html2canvas: { scale: 2 },
-          jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' },
-          pagebreak: { mode: ['css', 'legacy'] }
-        } as Html2PdfOptions)
-        .from(analysisRef.current)
-        .toPdf()
-        .get('pdf')
-        .then((pdf: PdfDocument) => {
-          const pageCount: number = pdf.internal.getNumberOfPages();
-          for (let i: number = 1; i <= pageCount; i++) {
-            pdf.setPage(i);
-            pdf.setFontSize(10);
-            pdf.setTextColor(150);
-            pdf.text('Generated by Carcino AI Platform', 0.5, 10.75);
-            pdf.setFontSize(30);
-            pdf.setTextColor(200);
-            pdf.text('AI', 4, 5, { angle: 45 });
-          }
-        })
-        .save();
-    }
-  }
-
-  // Get assigned specialists if available
-  const assignedDoctors = result ? 
-    DOCTOR_MAP[result.prediction.toLowerCase()] || [] : [];
-
-  // Get condition-specific information
-  const diseaseInfo = result ? 
-    DISEASE_INFO[result.prediction.toLowerCase()] || "No detailed information available." : "";
-
-  // Get symptoms if available
-  const symptoms = result ? 
-    SYMPTOMS[result.prediction.toLowerCase()] || [] : [];
-  
-  // Get treatments if available
-  const treatments = result ? 
-    TREATMENTS[result.prediction.toLowerCase()] || [] : [];
-
-  // Get precautions if available
-  const precautions = result ? 
-    PRECAUTIONS[result.prediction.toLowerCase()] || [] : [];
-
-  // Add this function for speech synthesis
   const speakSummary = () => {
-    if (!result) return;
-    
-    const predictionKey = result.prediction.toLowerCase();
-    const riskData = RISK_LEVEL[predictionKey] || { 
-      risk: 'Unknown', 
-      action: 'Please consult a specialist for more info.' 
-    };
-    
-    const summary = `Condition: ${result.details?.name || result.prediction}. 
-                     Confidence: ${(result.confidence * 100).toFixed(1)} percent. 
-                     Risk Level: ${riskData.risk}. 
-                     Recommendation: ${riskData.action}`;
-    
-    const utterance = new SpeechSynthesisUtterance(summary);
-    window.speechSynthesis.speak(utterance);
-  };
+    if (!result) return
+    const text = `Skin analysis result for ${result.prediction_name}. Confidence ${((result.confidence as number) * 100).toFixed(1)} percent. Severity ${result.severity}. Urgency: ${result.urgency}. ${result.clinical_notes}`
+    window.speechSynthesis.speak(new SpeechSynthesisUtterance(text as string))
+  }
 
-  // Get risk data if available
-  const riskData = result ? 
-    RISK_LEVEL[result.prediction.toLowerCase()] || 
-    { risk: 'Unknown', action: 'Please consult a specialist for more info.' } : 
-    { risk: '', action: '' };
+  const exportToPDF = async () => {
+    if (!analysisRef.current) return
+    const { default: html2pdf } = await import('html2pdf.js')
+    html2pdf().from(analysisRef.current).set({
+      margin: [0.5, 0.5, 1, 0.5],
+      filename: `DermaSense_Analysis_${result?.prediction_name || 'result'}.pdf`,
+      html2canvas: { scale: 2 },
+      jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' },
+    }).save()
+  }
 
+  // ─── RENDER ────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
-      {/* Upload Image Card */}
-      <Card className="border-2 border-emerald-100 dark:border-emerald-900/30 shadow-xl overflow-hidden">
-        <div className="bg-gradient-to-r from-emerald-500 to-teal-500 h-2" />
-        <CardHeader className="bg-gradient-to-br from-white to-emerald-50 dark:from-gray-800 dark:to-gray-900">
-          <div className="flex items-center gap-2">
-            <div className="p-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg">
-              <Upload className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+      {/* Step Breadcrumb */}
+      <div className="flex items-center justify-center gap-1 flex-wrap">
+        {STEPS_DEF.map((s, i) => (
+          <div key={s.id} className="flex items-center gap-1">
+            <div className={`px-3 py-1 rounded-full text-xs font-semibold transition-all ${
+              i === currentStepIdx
+                ? 'bg-emerald-600 text-white shadow'
+                : i < currentStepIdx
+                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                : 'bg-gray-100 text-gray-400 dark:bg-gray-800'
+            }`}>
+              {i < currentStepIdx ? '✓ ' : `${i + 1}. `}{s.label}
             </div>
-            <div>
-              <CardTitle className="text-emerald-900 dark:text-emerald-100">Skin Condition Analysis</CardTitle>
-              <CardDescription className="text-emerald-700 dark:text-emerald-300">Upload an image for AI-powered analysis and instant results</CardDescription>
-            </div>
+            {i < STEPS_DEF.length - 1 && <ChevronRight className="h-3 w-3 text-gray-400" />}
           </div>
-        </CardHeader>
-        <CardContent className="pt-6">
-          <div
-            className={`border-2 border-dashed rounded-xl p-8 sm:p-12 flex flex-col items-center justify-center text-center transition-all duration-300 ${
-              selectedImage 
-                ? "border-emerald-500 bg-emerald-50/50 dark:bg-emerald-900/20" 
-                : "border-gray-300 dark:border-gray-700 hover:border-emerald-400 hover:bg-emerald-50/30 dark:hover:bg-emerald-900/10"
-            }`}
-            onDrop={handleDrop}
-            onDragOver={handleDragOver}
-          >
-            {!selectedImage ? (
-              <>
-                <div className="mb-6 rounded-full bg-gradient-to-br from-emerald-100 to-teal-100 dark:from-emerald-900/30 dark:to-teal-900/30 p-6 shadow-lg">
-                  <Upload className="h-10 w-10 text-emerald-600 dark:text-emerald-400" />
-                </div>
-                <h3 className="text-xl font-bold mb-2 text-emerald-900 dark:text-emerald-100">Upload Image</h3>
-                <p className="text-sm text-muted-foreground mb-6 max-w-md">Drag and drop your skin image here, or click the button below to browse</p>
-                <Button 
-                  size="lg"
-                  className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-lg"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <Upload className="mr-2 h-4 w-4" />
-                  Select Image
-                </Button>
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  className="hidden"
-                  accept="image/jpeg,image/png,image/jpg"
-                  onChange={handleImageChange}
-                  aria-label="Upload skin lesion image"
-                  id="image-upload"
-                />
-                <label htmlFor="image-upload" className="sr-only">Upload skin lesion image</label>
-              </>
-            ) : (
-              <div className="relative w-full">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="absolute right-2 top-2 z-10 rounded-full bg-white/90 dark:bg-gray-800/90 shadow-lg hover:bg-red-50 hover:text-red-600"
-                  onClick={resetAnalysis}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-                <div className="flex flex-col items-center">
-                  <div className="relative w-full max-w-md h-80 mb-4 overflow-hidden rounded-xl border-4 border-emerald-200 dark:border-emerald-800 shadow-xl">
-                    <Image
-                      src={selectedImage || "/placeholder.svg"}
-                      alt="Selected skin lesion"
-                      fill
-                      className="object-contain bg-white dark:bg-gray-900"
-                    />
-                  </div>
-                  <div className="flex items-center gap-2 mb-6 px-4 py-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-full">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                    <p className="text-sm font-medium text-emerald-900 dark:text-emerald-100">{fileName}</p>
-                  </div>
-                  <Button 
-                    onClick={handleAnalyze} 
-                    disabled={isAnalyzing} 
-                    size="lg"
-                    className="w-full max-w-xs bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-lg"
-                  >
-                    {isAnalyzing ? (
-                      <>
-                        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                        Analyzing with AI...
-                      </>
-                    ) : (
-                      <>
-                        <Brain className="mr-2 h-5 w-5" />
-                        Analyze Image
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
+        ))}
+      </div>
 
-          {isAnalyzing && (
-            <motion.div 
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="mt-6 space-y-3 bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 p-6 rounded-xl border border-emerald-200 dark:border-emerald-800"
-            >
-              <div className="flex items-center justify-center gap-2">
-                <Brain className="h-5 w-5 text-emerald-600 dark:text-emerald-400 animate-pulse" />
-                <p className="text-sm font-medium text-emerald-900 dark:text-emerald-100">AI Analysis in Progress...</p>
-              </div>
-              <Progress value={45} className="h-3 [&>div]:bg-gradient-to-r [&>div]:from-emerald-500 [&>div]:to-teal-500" />
-              <p className="text-xs text-center text-muted-foreground">Our deep learning model is analyzing your image</p>
-            </motion.div>
-          )}
+      {/* ── STEP 1: Body Part Selection ──────────────────────────────────────── */}
+      <AnimatePresence mode="wait">
+        {step === 'SELECT_BODY_PART' && (
+          <motion.div key="select" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+            <Card className="border-2 border-emerald-100 dark:border-emerald-900/30 shadow-xl overflow-hidden">
+              <div className="bg-gradient-to-r from-emerald-500 to-teal-500 h-2" />
+              <CardContent className="pt-8 pb-8">
+                <BodyPartSelector onSelect={handleBodyPartSelect} />
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
 
-          {error && (
-            <Alert variant="destructive" className="mt-4">
-              <AlertCircle className="h-4 w-4" />
-              <AlertTitle>Error</AlertTitle>
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Analysis Results Card */}
-      {result && (
-        <motion.div
-          ref={analysisRef}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-        >
-          <Card className="overflow-hidden border-2 border-emerald-100 dark:border-emerald-900/30 shadow-2xl">
-            <div className="bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 h-2" />
-            <CardHeader className="bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-gray-800 dark:to-gray-900">
-              <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="p-3 bg-white dark:bg-gray-800 rounded-xl shadow-lg">
-                    {result.details?.emoji ? (
-                      <span className="text-3xl">{result.details.emoji}</span>
-                    ) : result.prediction === "Carcinoma" ? (
-                      <AlertCircle className="h-8 w-8 text-red-600" />
-                    ) : (
-                      <CheckCircle2 className="h-8 w-8 text-emerald-600" />
-                    )}
-                  </div>
-                  <div>
-                    <CardTitle className="text-2xl text-emerald-900 dark:text-emerald-100">Analysis Complete</CardTitle>
-                    <CardDescription className="text-emerald-700 dark:text-emerald-300">AI-powered comprehensive skin analysis</CardDescription>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {/* Enhanced indication that analysis was saved to history */}
-                  {analysisSaved && (
-                    <motion.div
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
-                      className="flex items-center gap-1 px-3 py-1.5 bg-emerald-100 dark:bg-emerald-900/30 rounded-full text-xs font-medium text-emerald-700 dark:text-emerald-300"
-                    >
-                      <CheckCircle2 className="h-3 w-3" />
-                      <span>Saved to History</span>
-                    </motion.div>
-                  )}
-                  <Button variant="outline" size="sm" onClick={speakSummary} className="flex items-center shadow-sm">
-                    <Volume2 className="h-4 w-4 sm:mr-1" />
-                    <span className="hidden sm:inline">Speak</span>
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={exportToPDF} className="flex items-center shadow-sm">
-                    <Download className="h-4 w-4 sm:mr-1" />
-                    <span className="hidden sm:inline">Export</span>
-                  </Button>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {/* Risk Warning Banners */}
-              {riskData.risk === 'Very High' && (
-                <div className="bg-red-100 border border-red-300 text-red-800 p-3 rounded flex items-center gap-2">
-                  <AlertTriangle className="w-5 h-5" />
-                  <span><strong>Warning:</strong> This condition requires urgent medical attention.</span>
-                </div>
-              )}
-              
-              {riskData.risk === 'High' && (
-                <div className="bg-orange-100 border border-orange-300 text-orange-800 p-3 rounded flex items-center gap-2">
-                  <AlertTriangle className="w-5 h-5" />
-                  <span><strong>Caution:</strong> This condition is serious and should be addressed promptly.</span>
-                </div>
-              )}
-
-              <div className="grid md:grid-cols-2 gap-6">
-                {/* Left column - Medical Information */}
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <h3 className="text-lg font-semibold">Medical Assessment</h3>
-                    {result.prediction === "Carcinoma" && (
-                      <span className="px-2 py-1 text-xs font-medium bg-red-100 text-red-800 rounded-full">
-                        High Priority
-                      </span>
-                    )}
-                  </div>
-                  
-                  <motion.div whileHover={{ scale: 1.02 }} className="bg-gray-50 p-4 rounded-lg border">
-                    <p className="text-sm font-medium text-gray-600 mb-1">Predicted Condition</p>
-                    <p className="text-2xl font-bold text-green-700">{result.details?.name || result.prediction}</p>
-                    <p className="text-sm text-gray-500 mt-1 italic">({result.prediction.toUpperCase()})</p>
-                  </motion.div>
-                  
-                  <div className="grid grid-cols-2 gap-4">
-                    <motion.div whileHover={{ scale: 1.02 }} className="bg-gray-50 p-4 rounded-lg border">
-                      <p className="text-sm font-medium text-gray-600 mb-1">Confidence Level</p>
-                      <p className="text-xl font-bold">{(result.confidence * 100).toFixed(2)}%</p>
-                    </motion.div>
-                    
-                    <motion.div whileHover={{ scale: 1.02 }} className="bg-gray-50 p-4 rounded-lg border">
-                      <p className="text-sm font-medium text-gray-600 mb-1">Risk Classification</p>
-                      <p 
-                        className={`text-lg font-bold ${
-                          riskData.risk === 'Very High' ? 'text-red-600' : 
-                          riskData.risk === 'High' ? 'text-orange-500' : 
-                          riskData.risk === 'Medium' ? 'text-yellow-600' : 'text-green-600'
-                        }`}
-                      >
-                        {riskData.risk || (result.prediction === "Carcinoma" ? "High" : "Low")} Risk
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {riskData.action}
-                      </p>
-                    </motion.div>
-                  </div>
-                  
-                  {/* Medical Explanation - Now Above */}
-                  <motion.div whileHover={{ scale: 1.02 }} className="bg-gray-50 p-4 rounded-lg border">
-                    <p className="text-sm font-medium text-gray-600 mb-1">Medical Explanation</p>
-                    <p className="text-gray-700 text-sm leading-relaxed">
-                      {result.details?.info || diseaseInfo}
-                    </p>
-                  </motion.div>
-                  
-                  {/* Common Symptoms - Now Below */}
-                  {symptoms.length > 0 && (
-                    <motion.div whileHover={{ scale: 1.02 }} className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
-                      <p className="text-sm font-semibold text-yellow-800 mb-2">Common Symptoms</p>
-                      <ul className="list-disc list-inside text-sm text-yellow-800">
-                        {symptoms.map((symptom, index) => (
-                          <li key={index}>{symptom}</li>
-                        ))}
-                      </ul>
-                    </motion.div>
-                  )}
-                  
-                  {/* Treatment Options */}
-                  {treatments.length > 0 && (
-                    <motion.div whileHover={{ scale: 1.02 }} className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-                      <p className="text-sm font-semibold text-blue-800 mb-2">Suggested Treatments</p>
-                      <ul className="list-disc list-inside text-sm text-blue-900">
-                        {treatments.map((treatment, index) => (
-                          <li key={index}>{treatment}</li>
-                        ))}
-                      </ul>
-                    </motion.div>
-                  )}
-                  
-                  {/* Precautions Display */}
-                  {precautions.length > 0 && (
-                    <motion.div whileHover={{ scale: 1.02 }} className="bg-green-50 p-4 rounded-lg border border-green-200">
-                      <p className="text-sm font-semibold text-green-800 mb-2">Recommended Precautions</p>
-                      <ul className="list-disc list-inside text-sm text-green-900">
-                        {precautions.map((precaution, index) => (
-                          <li key={index}>{precaution}</li>
-                        ))}
-                      </ul>
-                    </motion.div>
-                  )}
-                  
-                  <motion.div 
-                    whileHover={{ scale: 1.02 }} 
-                    className="bg-blue-50 p-4 rounded-lg border border-blue-200 flex items-start gap-2"
-                  >
-                    <Stethoscope className="w-5 h-5 text-blue-600 mt-1" />
+        {/* ── STEP 2: Camera/Upload ──────────────────────────────────────────── */}
+        {step === 'CAMERA' && (
+          <motion.div key="camera" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+            <Card className="border-2 border-emerald-100 dark:border-emerald-900/30 shadow-xl overflow-hidden">
+              <div className="bg-gradient-to-r from-emerald-500 to-teal-500 h-2" />
+              <CardHeader className="pb-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl">{bodyPartInfo?.icon}</span>
                     <div>
-                      <p className="text-sm font-semibold text-blue-700">Recommended Action</p>
-                      <p className="text-sm text-blue-700 leading-snug">
-                        {result.details?.action || (result.prediction === "Carcinoma" 
-                          ? "Consult with a dermatologist as soon as possible. Early detection and treatment significantly improve outcomes."
-                          : "Continue regular skin self-examinations and schedule routine check-ups with your healthcare provider.")}
-                      </p>
+                      <CardTitle className="text-emerald-900 dark:text-emerald-100">Scanning: {bodyPartInfo?.label}</CardTitle>
+                      <CardDescription>Step 2 — Capture your skin image</CardDescription>
                     </div>
-                  </motion.div>
-                  
-                  {assignedDoctors.length > 0 && (
-                    <motion.div whileHover={{ scale: 1.02 }} className="bg-green-50 p-4 rounded-lg border border-green-200">
-                      <p className="text-sm font-semibold text-green-700 mb-2">Consult These Specialists</p>
-                      <ul className="list-disc list-inside text-sm text-green-800">
-                        {assignedDoctors.map((doc) => (
-                          <li key={doc}>{doc}</li>
-                        ))}
-                      </ul>
+                  </div>
+                  <Button variant="ghost" size="sm" onClick={resetAll}>
+                    <X className="h-4 w-4 mr-1" /> Change Area
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <Tabs defaultValue="camera">
+                  <TabsList className="w-full mb-4">
+                    <TabsTrigger value="camera" className="flex-1" id="camera-tab">📷 Live Camera</TabsTrigger>
+                    <TabsTrigger value="upload" className="flex-1" id="upload-tab">📁 Upload Image</TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="camera">
+                    <CameraCapture bodyPart={bodyPart} onCapture={handleCaptured} />
+                  </TabsContent>
+
+                  <TabsContent value="upload">
+                    <div
+                      className="border-2 border-dashed rounded-xl p-10 flex flex-col items-center justify-center text-center border-gray-300 dark:border-gray-700 hover:border-emerald-400 hover:bg-emerald-50/30 dark:hover:bg-emerald-900/10 transition-all cursor-pointer"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <div className="mb-4 p-5 rounded-full bg-gradient-to-br from-emerald-100 to-teal-100 dark:from-emerald-900/30 dark:to-teal-900/30">
+                        <Upload className="h-10 w-10 text-emerald-600 dark:text-emerald-400" />
+                      </div>
+                      <h3 className="text-lg font-bold mb-1 text-emerald-900 dark:text-emerald-100">Upload {bodyPartInfo?.label} Image</h3>
+                      <p className="text-sm text-muted-foreground mb-4">Click to browse or drag & drop. JPEG / PNG, max 8MB.</p>
+                      <Button size="lg" className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white" id="upload-browse-btn">
+                        <Upload className="mr-2 h-4 w-4" /> Browse File
+                      </Button>
+                      <input ref={fileInputRef} type="file" className="hidden" accept="image/jpeg,image/png,image/jpg" onChange={handleFileChange} id="file-upload-input" />
+                    </div>
+                  </TabsContent>
+                </Tabs>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+
+        {/* ── STEP 3: Analysis Progress ─────────────────────────────────────── */}
+        {step === 'ANALYZING' && (
+          <motion.div key="analyzing" initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}>
+            <Card className="border-2 border-emerald-100 dark:border-emerald-900/30 shadow-xl overflow-hidden">
+              <div className="bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 h-2" />
+              <CardContent className="py-12">
+                <div className="max-w-md mx-auto space-y-8">
+                  <div className="text-center">
+                    <motion.div
+                      animate={{ rotate: 360 }}
+                      transition={{ repeat: Infinity, duration: 2, ease: 'linear' }}
+                      className="inline-flex p-5 rounded-full bg-gradient-to-br from-emerald-100 to-teal-100 dark:from-emerald-900/40 dark:to-teal-900/40 mb-4"
+                    >
+                      <Brain className="h-10 w-10 text-emerald-600 dark:text-emerald-400" />
+                    </motion.div>
+                    <h3 className="text-xl font-bold text-emerald-900 dark:text-emerald-100">AI Analysis in Progress</h3>
+                    <p className="text-sm text-muted-foreground mt-1">Running 3 AI engines simultaneously</p>
+                  </div>
+
+                  {ANALYSIS_STEPS.map((s, i) => (
+                    <motion.div
+                      key={i}
+                      initial={{ opacity: 0.3 }}
+                      animate={{ opacity: i <= analysisStepIdx ? 1 : 0.35 }}
+                      className="space-y-1.5"
+                    >
+                      <div className="flex justify-between text-sm">
+                        <span className={`font-medium ${i <= analysisStepIdx ? 'text-emerald-700 dark:text-emerald-300' : 'text-gray-400'}`}>
+                          {i < analysisStepIdx ? '✅' : i === analysisStepIdx ? '⏳' : '⬜'} {s.label}
+                        </span>
+                        <span className="text-muted-foreground">{i <= analysisStepIdx ? s.progress : 0}%</span>
+                      </div>
+                      <Progress
+                        value={i <= analysisStepIdx ? s.progress : 0}
+                        className="h-2 [&>div]:bg-gradient-to-r [&>div]:from-emerald-500 [&>div]:to-teal-500"
+                      />
+                    </motion.div>
+                  ))}
+
+                  <div className="flex justify-center gap-4 pt-2">
+                    {['Azure CV', 'ML Model', 'GPT-4o'].map(e => (
+                      <motion.div
+                        key={e}
+                        animate={{ opacity: [0.5, 1, 0.5] }}
+                        transition={{ repeat: Infinity, duration: 1.8, delay: Math.random() * 0.8 }}
+                        className="px-3 py-1.5 bg-emerald-100 dark:bg-emerald-900/30 rounded-full text-xs font-semibold text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
+                      >
+                        {e}
+                      </motion.div>
+                    ))}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+
+        {/* ── STEP 4: Results ──────────────────────────────────────────────────── */}
+        {step === 'RESULT' && result && (
+          <motion.div key="result" ref={analysisRef} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
+
+            {/* ── Not Skin / Error ─── */}
+            {(result.error === 'not_skin_image' || result.prediction === 'error') && (
+              <Alert variant="destructive" className="mb-4">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Image Not Recognized</AlertTitle>
+                <AlertDescription>
+                  {result.message as string || 'Please capture a clear, close-up photo of a skin area.'}
+                  <Button variant="outline" size="sm" className="mt-3 w-full" onClick={resetAll}>🔄 Try Again</Button>
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {result.prediction !== 'error' && (
+              <Card className="overflow-hidden border-2 border-emerald-100 dark:border-emerald-900/30 shadow-2xl">
+                <div className={`h-3 bg-gradient-to-r ${
+                  result.severity === 'Critical' ? 'from-red-500 to-rose-600' :
+                  result.severity === 'High' ? 'from-orange-500 to-amber-500' :
+                  result.severity === 'Moderate' ? 'from-yellow-400 to-amber-500' :
+                  result.prediction === 'healthy' ? 'from-emerald-400 to-teal-500' :
+                  'from-blue-400 to-teal-400'
+                }`} />
+                <CardHeader className="bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-gray-800 dark:to-gray-900">
+                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {bodyPartInfo && (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 bg-white dark:bg-gray-800 rounded-full text-xs font-medium border shadow-sm">
+                            <span>{bodyPartInfo.icon}</span>
+                            <span>{bodyPartInfo.label}</span>
+                          </span>
+                        )}
+                        <span className="text-xs text-muted-foreground font-mono">{result.icd10 as string}</span>
+                        <SeverityBadge severity={result.severity as string} />
+                      </div>
+                      <CardTitle className="text-2xl text-emerald-900 dark:text-emerald-100">
+                        {result.prediction === 'healthy' ? '✅ Healthy Skin Detected' : `${result.prediction_name as string}`}
+                      </CardTitle>
+                      {analysisSaved && (
+                        <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-100 dark:bg-emerald-900/30 rounded-full text-xs text-emerald-700 dark:text-emerald-300 font-medium">
+                          <CheckCircle2 className="h-3 w-3" /> Saved to History
+                        </motion.div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" size="sm" onClick={speakSummary} id="speak-btn">
+                        <Volume2 className="h-4 w-4 sm:mr-1" /><span className="hidden sm:inline">Speak</span>
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={exportToPDF} id="export-pdf-btn">
+                        <Download className="h-4 w-4 sm:mr-1" /><span className="hidden sm:inline">Export PDF</span>
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+
+                <CardContent className="space-y-6 pt-6">
+                  {/* ── Critical / High warnings ── */}
+                  {result.severity === 'Critical' && (
+                    <Alert className="bg-red-50 border-red-300 dark:bg-red-900/20 dark:border-red-800">
+                      <AlertTriangle className="h-4 w-4 text-red-600" />
+                      <AlertTitle className="text-red-700 dark:text-red-300">Urgent Medical Attention Required</AlertTitle>
+                      <AlertDescription className="text-red-600 dark:text-red-400">
+                        This condition requires immediate evaluation by a medical professional. Please seek care today.
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                  {result.severity === 'High' && (
+                    <Alert className="bg-orange-50 border-orange-300 dark:bg-orange-900/20 dark:border-orange-800">
+                      <AlertTriangle className="h-4 w-4 text-orange-600" />
+                      <AlertTitle className="text-orange-700 dark:text-orange-300">Prompt Medical Evaluation Advised</AlertTitle>
+                      <AlertDescription className="text-orange-600 dark:text-orange-400">
+                        Please see a dermatologist or specialist soon to assess this condition.
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                  {result.needs_doctor_review && (
+                    <Alert className="bg-amber-50 border-amber-300 dark:bg-amber-900/20 dark:border-amber-800">
+                      <ShieldAlert className="h-4 w-4 text-amber-600" />
+                      <AlertTitle className="text-amber-700 dark:text-amber-300">Doctor Review Recommended</AlertTitle>
+                      <AlertDescription className="text-amber-600 dark:text-amber-400">
+                        Our AI engines gave differing assessments. A human dermatologist should verify this result.
+                      </AlertDescription>
+                    </Alert>
+                  )}
+
+                  {/* ── Healthy Card ── */}
+                  {result.prediction === 'healthy' && (
+                    <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} className="p-6 rounded-xl bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-900/30 dark:to-teal-900/30 border-2 border-emerald-200 dark:border-emerald-800 text-center">
+                      <div className="text-5xl mb-3">✅</div>
+                      <h3 className="text-xl font-bold text-emerald-800 dark:text-emerald-200 mb-2">Healthy Skin — No Disease Detected</h3>
+                      <p className="text-sm text-emerald-700 dark:text-emerald-300 max-w-md mx-auto">{result.clinical_notes as string}</p>
+                      <div className="mt-4 flex justify-center gap-3 flex-wrap">
+                        <span className="px-3 py-1 bg-emerald-200 dark:bg-emerald-800 rounded-full text-xs font-semibold text-emerald-800 dark:text-emerald-200">Severity: None</span>
+                        <span className="px-3 py-1 bg-emerald-200 dark:bg-emerald-800 rounded-full text-xs font-semibold text-emerald-800 dark:text-emerald-200">No action needed</span>
+                      </div>
                     </motion.div>
                   )}
-                </div>
-                
-                {/* Right column - Analysis Visuals */}
-                <div className="space-y-6">
-                  <h3 className="text-lg font-semibold mb-2">Analysis Breakdown</h3>
-                  
-                  {/* Class Probabilities - Now Above */}
-                  <div className="bg-white p-4 rounded-lg border">
-                    <p className="text-sm font-medium mb-3">Class Probabilities</p>
-                    <div className="space-y-3">
-                      {Object.entries(result.class_probabilities)
-                        .sort(([, a], [, b]) => (b as number) - (a as number))
-                        .map(([className, probability]) => (
-                        <motion.div whileHover={{ scale: 1.01 }} key={className}>
-                          <div className="flex justify-between text-sm mb-1">
-                            <span>{className.toUpperCase()}</span>
-                            <span>{(probability * 100).toFixed(2)}%</span>
-                          </div>
-                          <Progress
-                            value={probability * 100}
-                            className={`h-2 ${className.toLowerCase() === "carcinoma" ? "[&>div]:bg-destructive" : "[&>div]:bg-green-500"}`}
-                          />
-                        </motion.div>
+
+                  {/* ── AI Engines Used ── */}
+                  {result.engines_used && (
+                    <div className="flex gap-2 flex-wrap">
+                      {Object.entries(result.engines_used as Record<string, boolean>).map(([engine, used]) => (
+                        <span key={engine} className={`px-2.5 py-1 rounded-full text-xs font-medium border ${used ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800' : 'bg-gray-100 text-gray-400 border-gray-200 dark:bg-gray-800 dark:border-gray-700'}`}>
+                          {used ? '✅' : '❌'} {engine.replace('_', ' ').toUpperCase()}
+                        </span>
                       ))}
                     </div>
-                  </div>
-                  
-                  {/* Probability Distribution - Now Below */}
-                  <div className="bg-white p-4 rounded-lg border">
-                    <p className="text-sm font-medium mb-3">Probability Distribution</p>
-                    <div className="h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={Object.entries(result.class_probabilities).map(([label, prob], index) => ({
-                              name: label.toUpperCase(),
-                              value: +(prob * 100).toFixed(2),
-                              fill: COLORS[index % COLORS.length]
-                            }))}
-                            dataKey="value"
-                            nameKey="name"
-                            cx="50%"
-                            cy="50%"
-                            outerRadius={80}
-                            label={({ name, value }) => `${name}: ${value}%`}
-                          >
-                            {Object.entries(result.class_probabilities).map((_, index) => (
-                              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  )}
+
+                  <div className="grid md:grid-cols-2 gap-6">
+                    {/* ── Left column ── */}
+                    <div className="space-y-4">
+                      {result.prediction !== 'healthy' && (
+                        <>
+                          {/* Core diagnosis */}
+                          <motion.div whileHover={{ scale: 1.01 }} className="p-4 bg-gray-50 dark:bg-gray-800 rounded-xl border">
+                            <p className="text-xs font-semibold text-gray-500 mb-1">DIAGNOSED CONDITION</p>
+                            <p className="text-2xl font-bold text-emerald-700 dark:text-emerald-300">{result.prediction_name as string}</p>
+                            <p className="text-xs text-muted-foreground mt-1">Code: {result.prediction as string} · ICD-10: {result.icd10 as string}</p>
+                          </motion.div>
+
+                          {/* Confidence + Severity */}
+                          <div className="grid grid-cols-2 gap-3">
+                            <motion.div whileHover={{ scale: 1.02 }} className="p-3 bg-gray-50 dark:bg-gray-800 rounded-xl border text-center">
+                              <p className="text-xs font-medium text-gray-500 mb-1">Confidence</p>
+                              <p className="text-2xl font-bold text-emerald-700">{((result.confidence as number) * 100).toFixed(1)}%</p>
+                            </motion.div>
+                            <motion.div whileHover={{ scale: 1.02 }} className="p-3 bg-gray-50 dark:bg-gray-800 rounded-xl border text-center">
+                              <p className="text-xs font-medium text-gray-500 mb-1">Urgency</p>
+                              <p className="text-sm font-bold text-orange-600 dark:text-orange-400">{result.urgency as string}</p>
+                            </motion.div>
+                          </div>
+
+                          {/* Skin profile */}
+                          <motion.div whileHover={{ scale: 1.01 }} className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl border border-indigo-200 dark:border-indigo-800">
+                            <div className="flex items-center gap-2 mb-2">
+                              <Eye className="h-4 w-4 text-indigo-600" />
+                              <p className="text-sm font-semibold text-indigo-700 dark:text-indigo-300">Skin Profile</p>
+                            </div>
+                            <div className="flex gap-2 flex-wrap">
+                              <span className="px-2.5 py-1 bg-indigo-100 dark:bg-indigo-800 rounded-full text-xs font-semibold text-indigo-700 dark:text-indigo-200">
+                                Fitzpatrick Type {result.fitzpatrick_type as string}
+                              </span>
+                              <span className="px-2.5 py-1 bg-indigo-100 dark:bg-indigo-800 rounded-full text-xs font-semibold text-indigo-700 dark:text-indigo-200">
+                                {result.skin_tone as string}
+                              </span>
+                              {result.lesion_morphology && result.lesion_morphology !== 'none' && (
+                                <span className="px-2.5 py-1 bg-purple-100 dark:bg-purple-800 rounded-full text-xs font-semibold text-purple-700 dark:text-purple-200 capitalize">
+                                  {result.lesion_morphology as string}
+                                </span>
+                              )}
+                            </div>
+                          </motion.div>
+
+                          {/* Location */}
+                          {result.location && (
+                            <motion.div whileHover={{ scale: 1.01 }} className="p-3 bg-gray-50 dark:bg-gray-800 rounded-xl border flex items-center gap-2">
+                              <MapPin className="h-4 w-4 text-gray-500" />
+                              <div>
+                                <p className="text-xs text-gray-500">Detected Location</p>
+                                <p className="text-sm font-semibold capitalize">{result.location as string}</p>
+                              </div>
+                              {result.body_part_matches === false && (
+                                <span className="ml-auto text-xs text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full">⚠️ Mismatch</span>
+                              )}
+                            </motion.div>
+                          )}
+
+                          {/* Clinical Notes */}
+                          {result.clinical_notes && (
+                            <motion.div whileHover={{ scale: 1.01 }} className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800">
+                              <div className="flex items-center gap-2 mb-2">
+                                <Microscope className="h-4 w-4 text-blue-600" />
+                                <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">Clinical Assessment</p>
+                              </div>
+                              <p className="text-sm text-blue-800 dark:text-blue-200 leading-relaxed">{result.clinical_notes as string}</p>
+                            </motion.div>
+                          )}
+
+                          {/* Differential Diagnoses */}
+                          {Array.isArray(result.differential_diagnoses) && (result.differential_diagnoses as string[]).length > 0 && (
+                            <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-xl border">
+                              <p className="text-xs font-semibold text-gray-500 mb-2">DIFFERENTIAL DIAGNOSES</p>
+                              <div className="flex gap-2 flex-wrap">
+                                {(result.differential_diagnoses as string[]).map((d: string) => (
+                                  <span key={d} className="px-2.5 py-1 bg-gray-200 dark:bg-gray-700 rounded-full text-xs font-medium text-gray-700 dark:text-gray-300">{d}</span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Symptoms */}
+                          {Array.isArray(result.symptoms) && (result.symptoms as string[]).length > 0 && (
+                            <motion.div whileHover={{ scale: 1.01 }} className="p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-xl border border-yellow-200 dark:border-yellow-800">
+                              <div className="flex items-center gap-2 mb-2">
+                                <Activity className="h-4 w-4 text-yellow-600" />
+                                <p className="text-sm font-semibold text-yellow-800 dark:text-yellow-300">Common Symptoms</p>
+                              </div>
+                              <ul className="list-disc list-inside text-sm text-yellow-800 dark:text-yellow-200 space-y-0.5">
+                                {(result.symptoms as string[]).map((s: string) => <li key={s}>{s}</li>)}
+                              </ul>
+                            </motion.div>
+                          )}
+
+                          {/* Treatments */}
+                          {Array.isArray(result.treatments) && (result.treatments as string[]).length > 0 && (
+                            <motion.div whileHover={{ scale: 1.01 }} className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-200 dark:border-blue-800">
+                              <div className="flex items-center gap-2 mb-2">
+                                <Zap className="h-4 w-4 text-blue-600" />
+                                <p className="text-sm font-semibold text-blue-800 dark:text-blue-300">Suggested Treatments</p>
+                              </div>
+                              <ul className="list-disc list-inside text-sm text-blue-800 dark:text-blue-200 space-y-0.5">
+                                {(result.treatments as string[]).map((t: string) => <li key={t}>{t}</li>)}
+                              </ul>
+                            </motion.div>
+                          )}
+
+                          {/* Precautions */}
+                          {Array.isArray(result.precautions) && (result.precautions as string[]).length > 0 && (
+                            <motion.div whileHover={{ scale: 1.01 }} className="p-4 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-200 dark:border-emerald-800">
+                              <div className="flex items-center gap-2 mb-2">
+                                <ShieldAlert className="h-4 w-4 text-emerald-600" />
+                                <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">Precautions</p>
+                              </div>
+                              <ul className="list-disc list-inside text-sm text-emerald-800 dark:text-emerald-200 space-y-0.5">
+                                {(result.precautions as string[]).map((p: string) => <li key={p}>{p}</li>)}
+                              </ul>
+                            </motion.div>
+                          )}
+
+                          {/* Specialists */}
+                          {Array.isArray(result.specialists) && (result.specialists as string[]).length > 0 && (
+                            <motion.div whileHover={{ scale: 1.01 }} className="p-4 bg-green-50 dark:bg-green-900/20 rounded-xl border border-green-200 dark:border-green-800">
+                              <div className="flex items-center gap-2 mb-2">
+                                <Stethoscope className="h-4 w-4 text-green-600" />
+                                <p className="text-sm font-semibold text-green-700 dark:text-green-300">Recommended Specialists</p>
+                              </div>
+                              <ul className="list-disc list-inside text-sm text-green-800 dark:text-green-200">
+                                {(result.specialists as string[]).map((s: string) => <li key={s}>{s}</li>)}
+                              </ul>
+                            </motion.div>
+                          )}
+                        </>
+                      )}
+                    </div>
+
+                    {/* ── Right column ── */}
+                    <div className="space-y-5">
+                      {result.prediction !== 'healthy' && result.abcde && (
+                        <>
+                          <h3 className="text-base font-semibold flex items-center gap-2">
+                            <Brain className="h-4 w-4 text-purple-600" /> ABCDE Criteria Analysis
+                          </h3>
+                          <ABCDEPanel abcde={result.abcde as Record<string, string | string[]>} />
+                        </>
+                      )}
+
+                      {/* Class probabilities */}
+                      {result.class_probabilities && Object.keys(result.class_probabilities as Record<string, number>).length > 0 && (
+                        <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border">
+                          <p className="text-sm font-semibold mb-3">ML Classification Probabilities</p>
+                          <div className="space-y-2">
+                            {Object.entries(result.class_probabilities as Record<string, number>)
+                              .sort(([, a], [, b]) => b - a)
+                              .map(([cls, prob]) => (
+                              <div key={cls}>
+                                <div className="flex justify-between text-xs mb-1">
+                                  <span className="font-medium">{DISEASE_DB[cls]?.name || cls.toUpperCase()}</span>
+                                  <span>{((prob as number) * 100).toFixed(1)}%</span>
+                                </div>
+                                <Progress value={(prob as number) * 100} className="h-1.5 [&>div]:bg-emerald-500" />
+                              </div>
                             ))}
-                          </Pie>
-                          <Tooltip formatter={(value) => `${value}%`} />
-                        </PieChart>
-                      </ResponsiveContainer>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Pie chart */}
+                      {result.class_probabilities && Object.keys(result.class_probabilities as Record<string, number>).length > 0 && (
+                        <div className="p-4 bg-white dark:bg-gray-800 rounded-xl border">
+                          <p className="text-sm font-semibold mb-3">Probability Distribution</p>
+                          <div className="h-52">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <PieChart>
+                                <Pie
+                                  data={Object.entries(result.class_probabilities as Record<string, number>).map(([label, prob], i) => ({
+                                    name: DISEASE_DB[label]?.name || label.toUpperCase(),
+                                    value: +((prob as number) * 100).toFixed(1),
+                                    fill: COLORS[i % COLORS.length],
+                                  }))}
+                                  dataKey="value" nameKey="name"
+                                  cx="50%" cy="50%" outerRadius={75}
+                                  label={({ name, value }) => `${name.substring(0,8)}: ${value}%`}
+                                >
+                                  {Object.entries(result.class_probabilities as Record<string, number>).map((_, i) => (
+                                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                                  ))}
+                                </Pie>
+                                <Tooltip formatter={(v) => `${v}%`} />
+                              </PieChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Source image */}
+                      {previewUrl && (
+                        <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-xl border">
+                          <p className="text-xs font-medium text-gray-500 mb-2">Analyzed Image</p>
+                          <div className="relative w-full h-44 rounded-lg overflow-hidden">
+                            <Image src={previewUrl} alt="Analyzed skin" fill className="object-contain" />
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
-                  
-                  <div className="relative w-full rounded-lg overflow-hidden border p-4 bg-gray-50">
-                    <p className="text-sm font-medium mb-2">Source Image</p>
-                    <div className="relative w-full h-48 rounded-lg overflow-hidden border">
-                      <Image
-                        src={selectedImage || "/placeholder.svg"}
-                        alt="Selected skin lesion"
-                        fill
-                        className="object-contain"
-                      />
-                    </div>
+                </CardContent>
+
+                <CardFooter className="flex flex-col sm:flex-row justify-between gap-3 pt-0">
+                  <Button variant="outline" onClick={resetAll} id="analyze-another-btn">
+                    🔄 Analyze Another Area
+                  </Button>
+                  <div className="flex gap-2">
+                    <Button variant="secondary" onClick={() => (window.location.href = '/dashboard/analysis/history')} id="view-history-btn">
+                      <Clock className="h-4 w-4 mr-2" /> View History
+                    </Button>
+                    {result.severity !== 'None' && result.severity !== 'Low' && (
+                      <Button onClick={() => (window.location.href = '/dashboard/appointments')} id="book-consultation-btn"
+                        className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white">
+                        Book Consultation
+                      </Button>
+                    )}
                   </div>
-                </div>
-              </div>
-
-              {result.prediction === "Carcinoma" && (
-                <Alert className="bg-destructive/10 text-destructive border-destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertTitle>Potential Carcinoma Detected</AlertTitle>
-                  <AlertDescription>
-                    Our AI model has detected potential carcinoma cells in your image. Please consult with a healthcare
-                    professional for proper diagnosis and treatment options.
-                  </AlertDescription>
-                </Alert>
-              )}
-            </CardContent>
-            <CardFooter className="flex justify-between">
-              <Button variant="outline" onClick={resetAnalysis}>
-                Analyze Another Image
-              </Button>
-              <div className="flex gap-2">
-                <Button
-                  variant="secondary"
-                  onClick={() => {
-                    // Navigate to analysis history page
-                    window.location.href = "/dashboard/analysis/history"
-                  }}
-                >
-                  <Clock className="h-4 w-4 mr-2" />
-                  View History
-                </Button>
-                <Button
-                  variant="default"
-                  onClick={() => {
-                    // In a real app, this would navigate to appointment booking
-                    window.location.href = "/dashboard/appointments"
-                  }}
-                >
-                  Book Consultation
-                </Button>
-              </div>
-            </CardFooter>
-          </Card>
-        </motion.div>
-      )}
-
-      {/* Information Section */}
-      <Card className="border-2 border-gray-100 dark:border-gray-800 overflow-hidden">
-        <div className="bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 h-1" />
-        <CardHeader className="text-center pb-8">
-          <CardTitle className="text-2xl">How Our AI Analysis Works</CardTitle>
-          <CardDescription className="text-base mt-2">State-of-the-art deep learning technology for accurate skin analysis</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid md:grid-cols-3 gap-8">
-            <motion.div 
-              whileHover={{ scale: 1.05, y: -5 }}
-              className="text-center space-y-4 p-6 rounded-xl bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 border border-blue-200 dark:border-blue-800"
-            >
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center mx-auto shadow-lg">
-                <Upload className="h-8 w-8 text-white" />
-              </div>
-              <h4 className="font-bold text-lg">1. Upload Image</h4>
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                Upload your skin image securely. Our system preprocesses and normalizes it to match trained model requirements
-              </p>
-            </motion.div>
-            <motion.div 
-              whileHover={{ scale: 1.05, y: -5 }}
-              className="text-center space-y-4 p-6 rounded-xl bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 border border-purple-200 dark:border-purple-800"
-            >
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center mx-auto shadow-lg">
-                <Brain className="h-8 w-8 text-white" />
-              </div>
-              <h4 className="font-bold text-lg">2. AI Analysis</h4>
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                Advanced CNN deep learning model analyzes cellular patterns, texture, and morphological features with 95%+ accuracy
-              </p>
-            </motion.div>
-            <motion.div 
-              whileHover={{ scale: 1.05, y: -5 }}
-              className="text-center space-y-4 p-6 rounded-xl bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-900/20 dark:to-emerald-800/20 border border-emerald-200 dark:border-emerald-800"
-            >
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center mx-auto shadow-lg">
-                <CheckCircle2 className="h-8 w-8 text-white" />
-              </div>
-              <h4 className="font-bold text-lg">3. Detailed Report</h4>
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                Receive comprehensive analysis with risk assessment, medical recommendations, and actionable clinical insights
-              </p>
-            </motion.div>
-          </div>
-        </CardContent>
-      </Card>
+                </CardFooter>
+              </Card>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

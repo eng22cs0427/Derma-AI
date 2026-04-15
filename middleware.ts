@@ -9,12 +9,25 @@ const isProtectedRoute = createRouteMatcher([
   '/onboarding(.*)',
 ])
 
+const isAdminRoute = createRouteMatcher(['/admin(.*)'])
+const isDoctorRoute = createRouteMatcher(['/doctor-dashboard(.*)'])
+
 export default clerkMiddleware(async (auth, req: NextRequest) => {
   if (isProtectedRoute(req)) {
     await auth.protect()
 
     const session = await auth()
     const role = (session.sessionClaims?.publicMetadata as Record<string, unknown>)?.role as string || 'patient'
+
+    // Admin route protection
+    if (isAdminRoute(req) && role !== 'admin') {
+      return NextResponse.redirect(new URL('/dashboard', req.url))
+    }
+
+    // Doctor route protection
+    if (isDoctorRoute(req) && role !== 'doctor' && role !== 'admin') {
+      return NextResponse.redirect(new URL('/dashboard', req.url))
+    }
 
     // Auto-redirect doctors to their dashboard
     if (req.nextUrl.pathname === '/dashboard' && role === 'doctor') {

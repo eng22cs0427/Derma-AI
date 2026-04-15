@@ -9,11 +9,11 @@ export default async function Page() {
         <div className="text-center space-y-4 mb-8">
           <div className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-emerald-100 dark:bg-emerald-900/30 rounded-full text-emerald-700 dark:text-emerald-400 text-sm font-medium">
             <Brain className="h-4 w-4" />
-            <span>AI-Powered Diagnosis</span>
+            <span>3-Engine AI Skin Analysis</span>
           </div>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <h1 className="text-4xl sm:text-5xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 dark:from-emerald-400 dark:to-teal-400 bg-clip-text text-transparent">
-              DermaAI Analysis
+              DermaSense AI Analysis
             </h1>
           </div>
           <div className="flex justify-center mt-4">
@@ -23,9 +23,9 @@ export default async function Page() {
             </a>
           </div>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-            Advanced skin condition detection powered by deep learning. Get instant analysis with detailed medical insights.
+            Select your scan area, capture or upload, and get a clinically-detailed report from our 3-engine AI pipeline — works accurately for all skin types (Fitzpatrick Types I–VI).
           </p>
-          
+
           {/* Trust Indicators */}
           <div className="flex flex-wrap justify-center gap-6 mt-6 text-sm text-muted-foreground">
             <div className="flex items-center gap-2">
@@ -34,17 +34,33 @@ export default async function Page() {
             </div>
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-emerald-600" />
-              <span>85-95%+ Accuracy</span>
+              <span>Azure CV + GPT-4o + ML — 3 Engines</span>
             </div>
             <div className="flex items-center gap-2">
               <Brain className="h-4 w-4 text-emerald-600" />
-              <span>Deep Learning Model</span>
+              <span>40+ Skin Conditions · All Skin Tones</span>
             </div>
+          </div>
+
+          {/* 4-Step flow indicator */}
+          <div className="flex flex-wrap justify-center gap-1 items-center mt-3 text-xs text-muted-foreground">
+            {['Select Body Part', 'Scan / Upload', 'AI Analysis', 'Full Report'].map((s, i) => (
+              <span key={s} className="flex items-center gap-1">
+                <span className="px-2 py-0.5 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 rounded-full font-medium">{i + 1}. {s}</span>
+                {i < 3 && <span className="text-gray-300">→</span>}
+              </span>
+            ))}
           </div>
         </div>
 
-        {/* Pass authentication status to client component if needed */}
+        {/* Main Analyzer */}
         <ImageAnalyzer />
+
+        {/* Disclaimer */}
+        <p className="text-center text-xs text-muted-foreground mt-8 max-w-lg mx-auto">
+          ⚕️ DermaSense AI is an adjunct diagnostic tool — not a substitute for professional medical advice.
+          Always consult a qualified dermatologist for accurate diagnosis and treatment.
+        </p>
       </div>
     </div>
   )
