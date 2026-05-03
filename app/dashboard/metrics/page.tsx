@@ -504,7 +504,7 @@ export default function HealthMetricsPage() {
     // Add header
     doc.setFontSize(20)
     doc.setTextColor(0, 102, 204)
-    doc.text("Carcino AI", 105, 20, { align: "center" })
+    doc.text("Derma AI", 105, 20, { align: "center" })
 
     doc.setFontSize(16)
     doc.setTextColor(0, 0, 0)

@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
     const response = await fetch(duckDuckGoUrl, {
       method: "GET",
       headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; Carcino AI Medical Search)",
+        "User-Agent": "Mozilla/5.0 (compatible; Derma AI Medical Search)",
         Accept: "application/json",
       },
     })

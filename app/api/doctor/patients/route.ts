@@ -9,7 +9,7 @@ export async function GET() {
     const apptCol = await getCollection<IAppointment>('appointments')
 
     const patients = await profiles
-      .find({ role: 'patient', isActive: true })
+      .find({ role: { $ne: 'doctor' } })
       .sort({ createdAt: -1 })
       .toArray()
 

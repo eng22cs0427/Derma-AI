@@ -66,7 +66,7 @@ function InitialsAvatar({ name }: { name?: string }) {
 export default function DoctorOverviewPage() {
   const { user } = useUser()
   const [analyses, setAnalyses] = useState<Analysis[]>([])
-  const [stats, setStats] = useState({ totalPatients: 0, totalAnalyses: 0, highRiskCases: 0, recentAnalyses: 0 })
+  const [stats, setStats] = useState({ totalPatients: 0, totalAnalyses: 0, highRiskCases: 0, recentAnalyses: 0, doctorName: "Doctor" })
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
@@ -94,6 +94,8 @@ export default function DoctorOverviewPage() {
   const hour = new Date().getHours()
   const greeting = hour < 12 ? "Good Morning" : hour < 18 ? "Good Afternoon" : "Good Evening"
 
+  const finalDoctorName = stats.doctorName && stats.doctorName !== "Doctor" ? stats.doctorName : (user?.fullName || "Doctor")
+
   return (
     <div className="p-4 sm:p-6 space-y-6">
 
@@ -109,9 +111,9 @@ export default function DoctorOverviewPage() {
               </span>
               <span className="text-sm text-white/70 font-medium">Live Patient Data</span>
             </div>
-            <h1 className="text-3xl sm:text-4xl font-black tracking-tight">{greeting}, Dr. {user?.fullName || "Doctor"}</h1>
+            <h1 className="text-3xl sm:text-4xl font-black tracking-tight">{greeting}, Dr. {finalDoctorName}</h1>
             <p className="text-white/75 mt-2 max-w-xl text-sm sm:text-base">
-              Your clinical dashboard — real-time AI skin analysis results and patient records from DermaAI.
+              Your clinical dashboard — real-time AI skin analysis results and patient records from Derma AI.
             </p>
           </div>
           <div className="flex gap-3">

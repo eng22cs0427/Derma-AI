@@ -10,7 +10,7 @@ import { Toaster } from "sonner";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Carcino AI",
+  title: "Derma AI – AI Powered Skin Disease Analysis",
   description: "AI-powered dermatology analysis and medical management",
 };
 

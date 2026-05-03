@@ -19,7 +19,7 @@ const PdfTemplate = ({ details }: { details: any }) => {
   const riskConf = getRiskConfig(result.severity || details.Risk_Level || "Low")
 
   return (
-    <div id="pdf-export-container" className="bg-white text-slate-900 p-8 font-sans w-[800px] mx-auto border-2 border-slate-100 rounded-xl">
+    <div id="pdf-export-container" className="bg-white text-slate-900 p-8 font-sans w-[650px] mx-auto border-2 border-slate-100 rounded-xl">
       {/* Header */}
       <div className="flex justify-between items-start border-b-2 border-slate-100 pb-6 mb-6">
         <div className="flex gap-4">
@@ -33,7 +33,7 @@ const PdfTemplate = ({ details }: { details: any }) => {
             <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider mt-1">Medical AI Diagnostic Report</p>
           </div>
         </div>
-        <div className="text-right">
+        <div className="text-right flex-shrink-0 ml-4 max-w-[200px] break-words">
           <p className="text-sm font-bold text-slate-700">{details.Patient_Name || "Patient"}</p>
           <p className="text-xs text-slate-500 mt-1">Age: {details.Patient_Age || "N/A"}</p>
           <p className="text-xs text-slate-500 mt-0.5">{details.analysis_time || new Date().toLocaleString()}</p>
@@ -81,8 +81,8 @@ const PdfTemplate = ({ details }: { details: any }) => {
               </p>
             )}
           </div>
-          <div className="text-right">
-            <div className="flex gap-2 justify-end mb-2">
+          <div className="text-right flex-shrink-0 ml-4 max-w-[250px]">
+            <div className="flex flex-wrap gap-2 justify-end mb-2">
               {result.urgency && (
                 <span className={`inline-flex items-center px-3 py-1.5 rounded-full text-sm font-bold border bg-white shadow-sm ${
                   result.urgency.toLowerCase().includes('immediate') || result.urgency.toLowerCase().includes('urgent') 
@@ -279,7 +279,7 @@ export function PdfExportButton({
         .set({
           margin: [0.4, 0.4, 0.6, 0.4],
           filename: `DermaSense_Analysis_${resultName}.pdf`,
-          html2canvas: { scale: 2, useCORS: true, logging: false },
+          html2canvas: { scale: 2, useCORS: true, logging: false, windowWidth: 650 },
           jsPDF: { unit: "in", format: "a4", orientation: "portrait" },
           pagebreak: { mode: ["avoid-all", "css", "legacy"], before: ".pdf-page-break" }
         })

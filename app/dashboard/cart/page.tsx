@@ -169,7 +169,7 @@ export default function CartPage() {
         {
           headers: {
             Accept: "application/json",
-            "User-Agent": "Carcino AI Application",
+            "User-Agent": "Derma AI Application",
           },
         },
       )

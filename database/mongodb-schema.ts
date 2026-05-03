@@ -179,3 +179,15 @@ export interface IDoctorNotification {
   read: boolean
   createdAt: Date
 }
+
+export interface IPatientNotification {
+  _id?: ObjectId
+  patientId: ObjectId
+  doctorId?: ObjectId
+  title: string
+  message: string
+  type: 'Appointment' | 'General'
+  link?: string
+  read: boolean
+  createdAt: Date
+}
