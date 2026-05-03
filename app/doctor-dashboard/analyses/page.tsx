@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
+import { PdfExportButton } from "@/components/analysis/pdf-export-button"
 import { toast } from "sonner"
 import { DUMMY_ANALYSES } from "@/lib/doctor-dummy-data"
 
@@ -276,14 +277,19 @@ export default function DoctorAnalysesPage() {
 
                   {isOpen && (
                     <div className="border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 px-4 sm:px-6 py-5 space-y-4">
-                      {/* Risk bar */}
-                      <div>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-[11px] font-bold uppercase text-slate-400 tracking-wider">Risk Level</span>
-                          <span className={cn("text-xs font-bold px-2 py-0.5 rounded-full border", riskConf.badge)}>{riskConf.label}</span>
+                      {/* Risk bar & Download */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className="text-[11px] font-bold uppercase text-slate-400 tracking-wider">Risk Level</span>
+                            <span className={cn("text-xs font-bold px-2 py-0.5 rounded-full border", riskConf.badge)}>{riskConf.label}</span>
+                          </div>
+                          <div className="h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                            <div className={cn("h-full rounded-full", riskConf.bar)} />
+                          </div>
                         </div>
-                        <div className="h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
-                          <div className={cn("h-full rounded-full", riskConf.bar)} />
+                        <div className="shrink-0">
+                          <PdfExportButton details={details} variant="outline" className="w-full sm:w-auto text-xs" />
                         </div>
                       </div>
 

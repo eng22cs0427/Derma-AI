@@ -5,6 +5,7 @@ import { useMedicalHistory, HistoryItem } from "@/contexts/MedicalHistoryContext
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Calendar, Microscope, Pill, Clock, Activity, FileText } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { PdfExportButton } from "@/components/analysis/pdf-export-button"
 
 function HistoryIcon({ type }: { type: string }) {
   switch (type) {
@@ -111,7 +112,7 @@ export default function MedicalHistoryPage() {
                       ) : (
                         <div className="space-y-1">
                           {Object.entries(item.details).map(([key, value]) => {
-                            if (key === 'source' || key === 'type') return null;
+                            if (key === 'source' || key === 'type' || key === 'fullReport' || key === 'rawDetails') return null;
                             const formatKey = key.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim();
                             const displayValue = (() => {
                               if (key === 'items' && Array.isArray(value)) {
@@ -145,6 +146,12 @@ export default function MedicalHistoryPage() {
                           })}
                         </div>
                       )}
+                    </div>
+                  )}
+
+                  {item.type === "Analysis" && item.details && (
+                    <div className="mt-6 pt-4 border-t border-slate-100 flex justify-end">
+                      <PdfExportButton details={item.details} variant="outline" className="text-xs" />
                     </div>
                   )}
                 </div>

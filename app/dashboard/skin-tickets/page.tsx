@@ -11,6 +11,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
+import { PdfExportButton } from "@/components/analysis/pdf-export-button"
 
 interface Ticket {
   id: string
@@ -28,6 +29,7 @@ interface Ticket {
   doctorMessage: string | null
   verdict: string | null
   reviewedAt: string | null
+  rawDetails: any
 }
 
 function getRiskConfig(risk: string) {
@@ -245,14 +247,19 @@ export default function SkinTicketsPage() {
                         ))}
                       </div>
 
-                      {/* Risk bar */}
-                      <div>
-                        <div className="flex justify-between text-[11px] font-bold mb-1">
-                          <span className="uppercase text-slate-400 tracking-wider">Risk Level</span>
-                          <span className={risk.color}>{risk.label}</span>
+                      {/* Risk bar & Download */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex justify-between text-[11px] font-bold mb-1">
+                            <span className="uppercase text-slate-400 tracking-wider">Risk Level</span>
+                            <span className={risk.color}>{risk.label}</span>
+                          </div>
+                          <div className="h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
+                            <div className={cn("h-full rounded-full transition-all", risk.bar)} />
+                          </div>
                         </div>
-                        <div className="h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
-                          <div className={cn("h-full rounded-full transition-all", risk.bar)} />
+                        <div className="shrink-0">
+                          <PdfExportButton details={ticket.rawDetails} variant="outline" className="w-full sm:w-auto text-xs" />
                         </div>
                       </div>
 

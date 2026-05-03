@@ -42,6 +42,7 @@ export async function GET() {
         doctorMessage: (details.doctorMessage as string) || null,
         verdict: (details.verdict as string) || null,
         reviewedAt: (details.reviewedAt as string) || null,
+        rawDetails: details,
       }
     })
 

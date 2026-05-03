@@ -114,6 +114,7 @@ export async function POST(request: NextRequest) {
               imageUrl,
               source: 'DermaSense AI Engine v3.0 (Azure CV + GPT-4o + ML)',
               analysis_time: now.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST',
+              fullReport: finalResult,
             },
             date: now,
             createdAt: now,
