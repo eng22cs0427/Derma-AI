@@ -26,10 +26,11 @@ export default async function DashboardLayout({
   const fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || primaryEmail.split('@')[0]
 
   let isOnboarded = false
+  let dbProfile = null
 
   try {
     // 1. Ensure user exists inside AWS RDS Postgres database
-    const dbProfile = await ensureUserProfileExists(user.id, primaryEmail, fullName)
+    dbProfile = await ensureUserProfileExists(user.id, primaryEmail, fullName)
     isOnboarded = Boolean(dbProfile.isOnboarded)
   } catch (error) {
     console.error("Failed to sync profile to database inside layout:", error)
@@ -41,9 +42,14 @@ export default async function DashboardLayout({
     redirect("/onboarding")
   }
 
+  // 3. Force auto-redirect doctors who arrive at the patient dashboard
+  if (dbProfile?.role === "doctor") {
+    redirect("/doctor-dashboard")
+  }
+
   return (
     <div className="min-h-screen bg-background">
-      <DashboardSidebar />
+      <DashboardSidebar isAdmin={dbProfile?.role === "admin"} />
       <div className="lg:pl-64">
         <DashboardHeader user={{
           id: user.id,

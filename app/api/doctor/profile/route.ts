@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server'
 import { auth, currentUser } from '@clerk/nextjs/server'
-import { getCollection, ObjectId } from '@/lib/mongodb'
+import { getCollection } from '@/lib/mongodb'
 import type { IProfile } from '@/database/mongodb-schema'
 
+// Extends IProfile with all doctor-specific fields stored in same collection
 interface IDoctorProfile extends IProfile {
   specialty?: string
   qualifications?: string
@@ -17,6 +18,41 @@ interface IDoctorProfile extends IProfile {
   rating?: number
   totalPatients?: number
   doctorImageUrl?: string
+  // New mandatory fields
+  meetingLink?: string
+  licenseNumber?: string
+  licenseDocumentUrl?: string
+  languages?: string[]
+  profileComplete?: boolean
+}
+
+// These fields must be filled before the doctor can access the dashboard
+const MANDATORY_FIELDS: (keyof IDoctorProfile)[] = [
+  'contactNumber',
+  'specialty',
+  'qualifications',
+  'experienceYears',
+  'hospitalName',
+  'hospitalAddress',
+  'meetingLink',
+  'licenseNumber',
+]
+
+function checkProfileComplete(doc: IDoctorProfile): boolean {
+  return MANDATORY_FIELDS.every(field => {
+    const val = doc[field]
+    if (val === undefined || val === null || val === '') return false
+    return true
+  })
+}
+
+function isValidUrl(str: string): boolean {
+  try {
+    const url = new URL(str)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
 }
 
 export async function GET() {
@@ -31,24 +67,53 @@ export async function GET() {
       const clerkUser = await currentUser()
       const email = clerkUser?.emailAddresses?.[0]?.emailAddress ?? ''
       const fullName = `${clerkUser?.firstName ?? ''} ${clerkUser?.lastName ?? ''}`.trim()
-      return NextResponse.json({ userId, email, fullName, avatarUrl: clerkUser?.imageUrl, role: 'doctor', _dbOffline: true })
+      return NextResponse.json({
+        userId, email, fullName,
+        avatarUrl: clerkUser?.imageUrl,
+        role: 'doctor',
+        profileComplete: false,
+        _dbOffline: true,
+      })
     }
 
+    const profileComplete = checkProfileComplete(doc)
+
     return NextResponse.json({
-      userId: doc.clerkUserId, email: doc.email, fullName: doc.fullName ?? '',
-      avatarUrl: doc.avatarUrl ?? null, dateOfBirth: doc.dateOfBirth ?? null,
-      gender: doc.gender ?? null, contactNumber: doc.contactNumber ?? null,
-      address: doc.address ?? null, city: doc.city ?? null, state: doc.state ?? null,
-      country: doc.country ?? null, postalCode: doc.postalCode ?? null, bio: doc.bio ?? null,
-      role: doc.role ?? 'doctor', isOnboarded: doc.isOnboarded ?? false,
-      createdAt: doc.createdAt, updatedAt: doc.updatedAt,
-      specialty: doc.specialty ?? null, qualifications: doc.qualifications ?? null,
-      experienceYears: doc.experienceYears ?? null, consultationFee: doc.consultationFee ?? null,
-      hospitalName: doc.hospitalName ?? null, hospitalAddress: doc.hospitalAddress ?? null,
-      availableDays: doc.availableDays ?? [], availableSlots: doc.availableSlots ?? {},
-      isVerified: doc.isVerified ?? false, professionalBio: doc.professionalBio ?? null,
-      rating: doc.rating ?? null, totalPatients: doc.totalPatients ?? 0,
+      userId: doc.clerkUserId,
+      email: doc.email,
+      fullName: doc.fullName ?? '',
+      avatarUrl: doc.avatarUrl ?? null,
+      dateOfBirth: doc.dateOfBirth ?? null,
+      gender: doc.gender ?? null,
+      contactNumber: doc.contactNumber ?? null,
+      address: doc.address ?? null,
+      city: doc.city ?? null,
+      state: doc.state ?? null,
+      country: doc.country ?? null,
+      postalCode: doc.postalCode ?? null,
+      bio: doc.bio ?? null,
+      role: doc.role ?? 'doctor',
+      isOnboarded: doc.isOnboarded ?? false,
+      createdAt: doc.createdAt,
+      updatedAt: doc.updatedAt,
+      specialty: doc.specialty ?? null,
+      qualifications: doc.qualifications ?? null,
+      experienceYears: doc.experienceYears ?? null,
+      consultationFee: doc.consultationFee ?? null,
+      hospitalName: doc.hospitalName ?? null,
+      hospitalAddress: doc.hospitalAddress ?? null,
+      availableDays: doc.availableDays ?? [],
+      availableSlots: doc.availableSlots ?? {},
+      isVerified: doc.isVerified ?? false,
+      professionalBio: doc.professionalBio ?? null,
+      rating: doc.rating ?? null,
+      totalPatients: doc.totalPatients ?? 0,
       doctorImageUrl: doc.doctorImageUrl ?? null,
+      meetingLink: doc.meetingLink ?? null,
+      licenseNumber: doc.licenseNumber ?? null,
+      licenseDocumentUrl: doc.licenseDocumentUrl ?? null,
+      languages: doc.languages ?? [],
+      profileComplete,
     })
   } catch (error) {
     console.error('[Doctor Profile GET]', error)
@@ -62,44 +127,79 @@ export async function PUT(req: Request) {
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const body = await req.json()
-    const {
-      fullName, dateOfBirth, gender, contactNumber, address, city, state, country, postalCode, bio, avatarUrl,
-      specialty, qualifications, experienceYears, consultationFee, hospitalName,
-      hospitalAddress, availableDays, availableSlots, professionalBio, doctorImageUrl,
-    } = body
+
+    // Validate meeting link if provided
+    if (body.meetingLink && !isValidUrl(body.meetingLink)) {
+      return NextResponse.json(
+        { error: 'Meeting link must be a valid URL (starting with http:// or https://)' },
+        { status: 400 }
+      )
+    }
+
+    // Validate phone number format
+    if (body.contactNumber) {
+      const phoneClean = body.contactNumber.replace(/\D/g, '')
+      if (phoneClean.length < 10 || phoneClean.length > 15) {
+        return NextResponse.json(
+          { error: 'Contact number must be 10–15 digits' },
+          { status: 400 }
+        )
+      }
+    }
 
     const $set: Partial<IDoctorProfile> = { updatedAt: new Date() }
-    if (fullName !== undefined) $set.fullName = fullName
-    if (dateOfBirth !== undefined) $set.dateOfBirth = dateOfBirth || undefined
-    if (gender !== undefined) $set.gender = gender ? (gender.charAt(0).toUpperCase() + gender.slice(1).toLowerCase()) : undefined
-    if (contactNumber !== undefined) $set.contactNumber = contactNumber
-    if (address !== undefined) $set.address = address
-    if (city !== undefined) $set.city = city
-    if (state !== undefined) $set.state = state
-    if (country !== undefined) $set.country = country
-    if (postalCode !== undefined) $set.postalCode = postalCode
-    if (bio !== undefined) $set.bio = bio
-    if (avatarUrl !== undefined) $set.avatarUrl = avatarUrl
-    if (specialty !== undefined) $set.specialty = specialty
-    if (qualifications !== undefined) $set.qualifications = qualifications
-    if (experienceYears !== undefined) $set.experienceYears = parseInt(String(experienceYears), 10) || undefined
-    if (consultationFee !== undefined) $set.consultationFee = parseFloat(String(consultationFee)) || undefined
-    if (hospitalName !== undefined) $set.hospitalName = hospitalName
-    if (hospitalAddress !== undefined) $set.hospitalAddress = hospitalAddress
-    if (availableDays !== undefined) $set.availableDays = availableDays
-    if (availableSlots !== undefined) $set.availableSlots = availableSlots
-    if (professionalBio !== undefined) $set.professionalBio = professionalBio
-    if (doctorImageUrl !== undefined) $set.doctorImageUrl = doctorImageUrl
+
+    const fields: (keyof IDoctorProfile)[] = [
+      'fullName', 'dateOfBirth', 'gender', 'contactNumber', 'address',
+      'city', 'state', 'country', 'postalCode', 'bio', 'avatarUrl',
+      'specialty', 'qualifications', 'experienceYears', 'consultationFee',
+      'hospitalName', 'hospitalAddress', 'availableDays', 'availableSlots',
+      'professionalBio', 'doctorImageUrl', 'meetingLink', 'licenseNumber',
+      'licenseDocumentUrl', 'languages',
+    ]
+
+    for (const field of fields) {
+      if (body[field] !== undefined) {
+        if (field === 'experienceYears') {
+          ;($set as Record<string, unknown>)[field] = parseInt(String(body[field]), 10) || undefined
+        } else if (field === 'consultationFee') {
+          ;($set as Record<string, unknown>)[field] = parseFloat(String(body[field])) || undefined
+        } else if (field === 'gender' && body[field]) {
+          ;($set as Record<string, unknown>)[field] =
+            body[field].charAt(0).toUpperCase() + body[field].slice(1).toLowerCase()
+        } else {
+          ;($set as Record<string, unknown>)[field] = body[field]
+        }
+      }
+    }
 
     const col = await getCollection<IDoctorProfile>('profiles')
     await col.updateOne({ clerkUserId: userId }, { $set })
+
     const updated = await col.findOne({ clerkUserId: userId, isActive: true })
+    if (!updated) {
+      return NextResponse.json({ error: 'Profile not found after update' }, { status: 404 })
+    }
+
+    const profileComplete = checkProfileComplete(updated)
+    // Mark isOnboarded once mandatory fields are all filled
+    if (profileComplete && !updated.isOnboarded) {
+      await col.updateOne({ clerkUserId: userId }, { $set: { isOnboarded: true, profileComplete: true } })
+    }
 
     return NextResponse.json({
-      userId: updated!.clerkUserId, email: updated!.email, fullName: updated!.fullName,
-      specialty: updated!.specialty, consultationFee: updated!.consultationFee,
-      hospitalName: updated!.hospitalName, availableDays: updated!.availableDays,
-      updatedAt: updated!.updatedAt,
+      userId: updated.clerkUserId,
+      email: updated.email,
+      fullName: updated.fullName,
+      specialty: updated.specialty,
+      consultationFee: updated.consultationFee,
+      hospitalName: updated.hospitalName,
+      availableDays: updated.availableDays,
+      meetingLink: updated.meetingLink,
+      licenseNumber: updated.licenseNumber,
+      contactNumber: updated.contactNumber,
+      profileComplete,
+      updatedAt: updated.updatedAt,
     })
   } catch (error) {
     console.error('[Doctor Profile PUT]', error)

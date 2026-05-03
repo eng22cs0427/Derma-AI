@@ -118,16 +118,4 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
   )
 }
 
-// This component should be moved to a separate file, not defined in the context file
-export default function ShopPage() {
-  // Example of using cart functionality
-  const { cartItems } = useCart()
-  
-  return (
-    <div>
-      <p>Number of items in cart: {cartItems.length}</p>
-      {/* ...rest of your component code... */}
-    </div>
-  )
-}
 

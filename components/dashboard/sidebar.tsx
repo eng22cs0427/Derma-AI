@@ -15,6 +15,7 @@ import {
   Users,
   Microscope,
   ShieldCheck,
+  Ticket,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -33,16 +34,16 @@ const menuItems = [
     href: "/dashboard/analysis",
   },
   {
+    title: "My Skin Tickets",
+    icon: Ticket,
+    href: "/dashboard/skin-tickets",
+    badge: "NEW",
+  },
+  {
     title: "Dermatologist Appointments",
     icon: Calendar,
     href: "/dashboard/appointments",
   },
-  // {
-  //   title: "Treatment Plans",
-  //   icon: Activity,
-    // href: "/dashboard/treatment",
-  // },
-
   {
     title: "Medical Shop",
     icon: ShoppingBag,
@@ -55,6 +56,7 @@ const menuItems = [
   },
 ]
 
+
 export function DashboardSidebar({ isAdmin = false }: { isAdmin?: boolean }) {
   const pathname = usePathname()
   const [isOpen, setIsOpen] = useState(false)
@@ -62,7 +64,7 @@ export function DashboardSidebar({ isAdmin = false }: { isAdmin?: boolean }) {
   const SidebarContent = () => (
     <nav className="flex-1 space-y-1 p-4">
       {menuItems.map((item) => {
-        const isActive = pathname === item.href
+        const isActive = pathname === item.href || pathname.startsWith(item.href + "/")
         return (
           <Link key={item.href} href={item.href}>
             <div
@@ -71,13 +73,17 @@ export function DashboardSidebar({ isAdmin = false }: { isAdmin?: boolean }) {
                 isActive ? "bg-primary text-primary-foreground" : "hover:bg-accent hover:text-accent-foreground",
               )}
             >
-              <item.icon className="h-4 w-4" />
-              <span>{item.title}</span>
+              <item.icon className="h-4 w-4 shrink-0" />
+              <span className="flex-1">{item.title}</span>
+              {"badge" in item && item.badge && !isActive && (
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-blue-600 text-white font-bold">{item.badge}</span>
+              )}
               {isActive && <ChevronRight className="ml-auto h-4 w-4" />}
             </div>
           </Link>
         )
       })}
+
       
       {/* Admin Panel Link — visible ONLY to the specific admin email */}
       {isAdmin && (

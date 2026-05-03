@@ -95,3 +95,32 @@ body {
   }
 }
 
+/* ── PDF export helpers ──────────────────────────────────────────────────── */
+.pdf-avoid-break {
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+
+.pdf-page-break {
+  page-break-before: always;
+  break-before: page;
+}
+
+/* Force background colours when printing / generating PDF */
+@media print {
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  .pdf-avoid-break {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+}
+
+/* ── xs breakpoint utilities (< 480px) ───────────────────────────────────── */
+@media (min-width: 480px) {
+  .xs\:flex-row { flex-direction: row; }
+  .xs\:w-auto   { width: auto; }
+}
+

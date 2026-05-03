@@ -1,8 +1,3 @@
-/**
- * DermaSense AI — Azure Computer Vision Utility (Enhanced)
- * Provides: skin confidence, Fitzpatrick estimation, ABCDE pre-analysis, quality score
- */
-
 const AZURE_CV_ENDPOINT = process.env.AZURE_VISION_ENDPOINT || ''
 const AZURE_CV_KEY = process.env.AZURE_VISION_KEY || ''
 
@@ -28,10 +23,7 @@ export interface AzureVisionResult {
   error?: string
 }
 
-function estimateFitzpatrick(
-  dominantColor: string,
-  accentColor: string
-): { type: string; description: string } {
+function estimateFitzpatrick(dominantColor: string, accentColor: string): { type: string; description: string } {
   const warm = ['brown', 'beige', 'tan', 'olive', 'caramel']
   const dark = ['dark brown', 'dark', 'black', 'ebony', 'mahogany']
   const fair = ['white', 'pink', 'pale', 'ivory', 'cream', 'light']
@@ -42,9 +34,7 @@ function estimateFitzpatrick(
   return { type: 'II-III', description: 'Light to Medium' }
 }
 
-/**
- * Analyzes image using Azure Computer Vision REST API (no SDK version conflicts)
- */
+// Switched to v3.2 stable REST API — the 2023-02-01-preview imageanalysis endpoint returned 410 Gone
 export async function analyzeImageWithAzure(imageBuffer: Buffer): Promise<AzureVisionResult> {
   const fallback: AzureVisionResult = {
     skinConfidence: 0.5,
@@ -56,7 +46,7 @@ export async function analyzeImageWithAzure(imageBuffer: Buffer): Promise<AzureV
     borderIrregularityHint: false,
     imageQuality: 'good',
     qualityScore: 0.7,
-    rawDescription: 'Azure CV not configured',
+    rawDescription: 'Azure CV unavailable',
   }
 
   if (!AZURE_CV_ENDPOINT || !AZURE_CV_KEY) {
@@ -64,7 +54,9 @@ export async function analyzeImageWithAzure(imageBuffer: Buffer): Promise<AzureV
   }
 
   try {
-    const url = `${AZURE_CV_ENDPOINT.replace(/\/$/, '')}/computervision/imageanalysis:analyze?api-version=2023-02-01-preview&features=tags,description,color`
+    const baseUrl = AZURE_CV_ENDPOINT.replace(/\/$/, '')
+    // Using v3.2 GA — the preview imageanalysis endpoint is deprecated
+    const url = `${baseUrl}/vision/v3.2/analyze?visualFeatures=Tags,Description,Color,ImageType&language=en`
 
     const response = await fetch(url, {
       method: 'POST',
@@ -76,20 +68,22 @@ export async function analyzeImageWithAzure(imageBuffer: Buffer): Promise<AzureV
     })
 
     if (!response.ok) {
-      console.warn('[azure-vision] API returned', response.status)
+      const errText = await response.text()
+      console.warn('[azure-vision] API error', response.status, errText.slice(0, 200))
       return { ...fallback, error: `Azure CV API error: ${response.status}` }
     }
 
     const data = await response.json() as {
-      tagsResult?: { values?: Array<{ name: string; confidence: number }> }
-      captionResult?: { text?: string; confidence?: number }
-      colorResult?: { dominantColorForeground?: string; dominantColorBackground?: string }
+      tags?: Array<{ name: string; confidence: number }>
+      description?: { captions?: Array<{ text: string; confidence: number }> }
+      color?: { dominantColorForeground?: string; dominantColorBackground?: string; accentColor?: string }
+      imageType?: { clipArtType?: number; lineDrawingType?: number }
     }
 
-    const allTags = (data.tagsResult?.values ?? []).map(t => t.name?.toLowerCase() || '')
+    const allTags = (data.tags ?? []).map(t => t.name?.toLowerCase() || '')
     const matchedSkinTags = allTags.filter(t => SKIN_TAGS.includes(t))
 
-    const skinConf = (data.tagsResult?.values ?? [])
+    const skinConf = (data.tags ?? [])
       .filter(t => SKIN_TAGS.includes(t.name?.toLowerCase() || ''))
       .reduce((sum, t) => sum + (t.confidence ?? 0), 0)
 
@@ -99,13 +93,14 @@ export async function analyzeImageWithAzure(imageBuffer: Buffer): Promise<AzureV
 
     const borderIrregularityHint = allTags.some(t => IRREGULAR_BORDER_TAGS.includes(t))
 
-    const dominantColor = data.colorResult?.dominantColorForeground ?? 'unknown'
-    const accentColor = data.colorResult?.dominantColorBackground ?? ''
+    const dominantColor = data.color?.dominantColorForeground ?? 'unknown'
+    const accentColor = data.color?.dominantColorBackground ?? ''
     const fitzpatrick = estimateFitzpatrick(dominantColor, accentColor)
 
-    const descConf = data.captionResult?.confidence ?? 0
-    const qualityScore = Math.min(descConf * 1.2, 1)
+    const captionConf = data.description?.captions?.[0]?.confidence ?? 0
+    const qualityScore = Math.min(captionConf * 1.2, 1)
     const imageQuality: AzureVisionResult['imageQuality'] = qualityScore < 0.3 ? 'poor' : 'good'
+    const rawDescription = data.description?.captions?.[0]?.text ?? ''
 
     return {
       skinConfidence,
@@ -117,13 +112,10 @@ export async function analyzeImageWithAzure(imageBuffer: Buffer): Promise<AzureV
       borderIrregularityHint,
       imageQuality,
       qualityScore,
-      rawDescription: data.captionResult?.text ?? '',
+      rawDescription,
     }
   } catch (err) {
     console.error('[azure-vision] Error:', err)
-    return {
-      ...fallback,
-      error: err instanceof Error ? err.message : 'Azure CV error',
-    }
+    return { ...fallback, error: err instanceof Error ? err.message : 'Azure CV error' }
   }
 }

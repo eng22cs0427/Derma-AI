@@ -14,6 +14,9 @@ export const metadata: Metadata = {
   description: "AI-powered dermatology analysis and medical management",
 };
 
+import { ToastListener } from "@/components/toast-listener";
+import { Suspense } from "react";
+
 export default function RootLayout({
   children,
 }: {
@@ -26,6 +29,9 @@ export default function RootLayout({
           <MedicalHistoryProvider>
             <WishlistProvider>
               <CartProvider>
+                <Suspense fallback={null}>
+                  <ToastListener />
+                </Suspense>
                 {children}
                 <Toaster />
               </CartProvider>

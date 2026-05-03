@@ -19,6 +19,8 @@ import {
   AlertTriangle,
   Clock,
   CheckCircle2,
+  User,
+  AlertCircle,
 } from "lucide-react"
 
 import { UserButton } from "@clerk/nextjs"
@@ -32,6 +34,7 @@ const navItems = [
   { title: "All Patients", icon: Users, href: "/doctor-dashboard/patients" },
   { title: "AI Analyses", icon: Microscope, href: "/doctor-dashboard/analyses" },
   { title: "Appointments", icon: Calendar, href: "/doctor-dashboard/appointments" },
+  { title: "My Profile", icon: User, href: "/doctor-dashboard/profile" },
 ]
 
 type Notification = {
@@ -65,6 +68,7 @@ export function DoctorShell({ children, isAdmin = false }: { children: React.Rea
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [doctorName, setDoctorName] = useState("Doctor")
   const [doctorSpecialty, setDoctorSpecialty] = useState("Dermatologist")
+  const [profileComplete, setProfileComplete] = useState<boolean | null>(null)
 
   // Notification state
   const [notifOpen, setNotifOpen] = useState(false)
@@ -84,6 +88,7 @@ export function DoctorShell({ children, isAdmin = false }: { children: React.Rea
         if (d) {
           if (d.fullName) setDoctorName(d.fullName.split(" ")[0])
           if (d.specialty) setDoctorSpecialty(d.specialty)
+          setProfileComplete(d._dbOffline ? true : (d.profileComplete ?? false))
         }
       })
       .catch(() => {})
@@ -204,6 +209,18 @@ export function DoctorShell({ children, isAdmin = false }: { children: React.Rea
               <div className="mt-4 group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-bold transition-all duration-150 text-purple-700 bg-purple-100 hover:bg-purple-200 dark:bg-purple-900/40 dark:text-purple-300 dark:hover:bg-purple-900/60 shadow-sm border border-purple-200 dark:border-purple-800">
                 <ShieldCheck className="h-4 w-4 flex-shrink-0" />
                 <span className="flex-1">Admin Panel</span>
+              </div>
+            </Link>
+          )}
+          {/* Profile incomplete warning — shown in sidebar until doctor fills all fields */}
+          {profileComplete === false && !pathname.startsWith("/doctor-dashboard/profile") && (
+            <Link href="/doctor-dashboard/profile" onClick={() => setSidebarOpen(false)}>
+              <div className="mx-1 mt-2 flex items-start gap-2.5 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-950/60 transition-colors">
+                <AlertCircle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-bold text-amber-800 dark:text-amber-300">Profile Incomplete</p>
+                  <p className="text-[10px] text-amber-700 dark:text-amber-400 mt-0.5">Fill mandatory fields to unlock all features</p>
+                </div>
               </div>
             </Link>
           )}

@@ -217,3 +217,108 @@ export async function sendAppointmentStatusEmail({
     textBody: `Appointment ${newStatus}: Dr. ${doctorName} on ${date} at ${time}${reason ? `\nReason: ${reason}` : ''}\n\nView: ${APP_URL}/dashboard/appointments`,
   })
 }
+
+// Sent immediately when doctor clicks "Confirm" in their dashboard
+export async function sendDoctorConfirmedAppointmentEmail({
+  to, patientName, doctorName, specialty, hospitalName, hospitalAddress,
+  date, time, meetingLink, fee, doctorPhone, licenseNumber,
+}: {
+  to: string
+  patientName: string
+  doctorName: string
+  specialty: string
+  hospitalName: string
+  hospitalAddress: string
+  date: string
+  time: string
+  meetingLink: string
+  fee: number
+  doctorPhone: string
+  licenseNumber: string
+}) {
+  const isVideo = !!meetingLink
+
+  await sendEmail({
+    to,
+    subject: `✅ Appointment Confirmed — Dr. ${doctorName} on ${date}`,
+    htmlBody: `
+      <div style="font-family:Arial,sans-serif;max-width:620px;margin:auto;padding:0;background:#f0f4ff;">
+        <!-- Header -->
+        <div style="background:linear-gradient(135deg,#1d4ed8,#4f46e5);padding:32px 24px;text-align:center;border-radius:12px 12px 0 0;">
+          <h1 style="color:white;margin:0;font-size:26px;letter-spacing:-0.5px;">DermaSense AI</h1>
+          <p style="color:#bfdbfe;margin:6px 0 0;font-size:13px;">Your Skin Health Partner</p>
+        </div>
+
+        <!-- Confirmed Banner -->
+        <div style="background:#dcfce7;border-left:5px solid #16a34a;padding:16px 24px;margin:0;">
+          <p style="color:#166534;font-weight:bold;font-size:16px;margin:0;">✅ Your appointment is CONFIRMED!</p>
+          <p style="color:#166534;margin:4px 0 0;font-size:13px;">Dr. ${doctorName} has accepted your booking. All details are below.</p>
+        </div>
+
+        <!-- Main Card -->
+        <div style="background:white;padding:28px 24px;">
+          <p style="color:#374151;font-size:15px;">Hi <strong>${patientName}</strong>,</p>
+          <p style="color:#6b7280;font-size:14px;line-height:1.6;">Your dermatology consultation has been confirmed. Please keep this email handy — it contains everything you need for your appointment.</p>
+
+          <!-- Appointment Details Table -->
+          <div style="background:#f8fafc;border-radius:10px;padding:20px;margin:20px 0;border:1px solid #e2e8f0;">
+            <h3 style="color:#1e293b;margin:0 0 14px;font-size:14px;text-transform:uppercase;letter-spacing:0.5px;">📅 Appointment Details</h3>
+            <table style="width:100%;border-collapse:collapse;">
+              <tr><td style="padding:7px 0;color:#64748b;font-size:13px;width:150px;">Date</td><td style="color:#1e293b;font-weight:600;font-size:13px;">${date}</td></tr>
+              <tr><td style="padding:7px 0;color:#64748b;font-size:13px;">Time</td><td style="color:#1e293b;font-weight:600;font-size:13px;">${time}</td></tr>
+              <tr><td style="padding:7px 0;color:#64748b;font-size:13px;">Type</td><td style="color:#1e293b;font-weight:600;font-size:13px;">${isVideo ? '🎥 Video Consultation' : '🏥 In-Person Visit'}</td></tr>
+              <tr><td style="padding:7px 0;color:#64748b;font-size:13px;">Consultation Fee</td><td style="color:#1e293b;font-weight:600;font-size:13px;">₹${fee}</td></tr>
+            </table>
+          </div>
+
+          <!-- Doctor Details -->
+          <div style="background:#eff6ff;border-radius:10px;padding:20px;margin:20px 0;border:1px solid #bfdbfe;">
+            <h3 style="color:#1e40af;margin:0 0 14px;font-size:14px;text-transform:uppercase;letter-spacing:0.5px;">👨‍⚕️ Your Doctor</h3>
+            <table style="width:100%;border-collapse:collapse;">
+              <tr><td style="padding:7px 0;color:#64748b;font-size:13px;width:150px;">Name</td><td style="color:#1e293b;font-weight:700;font-size:14px;">Dr. ${doctorName}</td></tr>
+              <tr><td style="padding:7px 0;color:#64748b;font-size:13px;">Specialty</td><td style="color:#1e293b;font-size:13px;">${specialty}</td></tr>
+              <tr><td style="padding:7px 0;color:#64748b;font-size:13px;">Hospital</td><td style="color:#1e293b;font-size:13px;">${hospitalName}</td></tr>
+              ${hospitalAddress ? `<tr><td style="padding:7px 0;color:#64748b;font-size:13px;">Address</td><td style="color:#1e293b;font-size:13px;">${hospitalAddress}</td></tr>` : ''}
+              ${doctorPhone ? `<tr><td style="padding:7px 0;color:#64748b;font-size:13px;">Contact</td><td style="color:#1e293b;font-size:13px;">${doctorPhone}</td></tr>` : ''}
+              ${licenseNumber ? `<tr><td style="padding:7px 0;color:#64748b;font-size:13px;">License No.</td><td style="color:#1e293b;font-size:13px;">${licenseNumber}</td></tr>` : ''}
+            </table>
+          </div>
+
+          ${isVideo ? `
+          <!-- Meeting Link -->
+          <div style="background:#fef9c3;border-radius:10px;padding:20px;margin:20px 0;border:1px solid #fde047;text-align:center;">
+            <h3 style="color:#713f12;margin:0 0 10px;font-size:14px;">🎥 Video Consultation Link</h3>
+            <p style="color:#713f12;font-size:13px;margin:0 0 14px;">Click the button below at your appointment time to join the video call.</p>
+            <a href="${meetingLink}" style="background:#1d4ed8;color:white;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:14px;display:inline-block;">Join Video Call →</a>
+            <p style="color:#92400e;font-size:11px;margin:10px 0 0;word-break:break-all;">${meetingLink}</p>
+          </div>
+          ` : ''}
+
+          <!-- Preparation Tips -->
+          <div style="background:#f0fdf4;border-radius:10px;padding:18px 20px;margin:20px 0;border:1px solid #bbf7d0;">
+            <h3 style="color:#166534;margin:0 0 10px;font-size:13px;text-transform:uppercase;letter-spacing:0.5px;">📋 Before Your Appointment</h3>
+            <ul style="color:#374151;font-size:13px;line-height:2;margin:0;padding-left:20px;">
+              ${isVideo
+                ? '<li>Ensure good lighting and a stable internet connection</li><li>Test your camera and microphone before the call</li><li>Keep your medical records and previous prescriptions ready</li><li>Note down any questions you want to ask the doctor</li>'
+                : '<li>Arrive 10–15 minutes before your scheduled time</li><li>Carry a valid photo ID and insurance card if applicable</li><li>Bring any previous skin condition photos or reports</li><li>Avoid applying creams or makeup to the affected area before the visit</li>'
+              }
+              <li>Your skin condition photos from DermaSense AI analysis can be shared during consultation</li>
+            </ul>
+          </div>
+
+          <!-- CTA -->
+          <div style="text-align:center;margin-top:24px;">
+            <a href="${APP_URL}/dashboard/appointments" style="background:linear-gradient(135deg,#1d4ed8,#4f46e5);color:white;padding:14px 36px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:14px;display:inline-block;">View My Appointments →</a>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div style="padding:16px 24px;text-align:center;background:#f8fafc;border-radius:0 0 12px 12px;border-top:1px solid #e2e8f0;">
+          <p style="color:#9ca3af;font-size:11px;margin:0;">DermaSense AI • For support contact support@dermaai.com</p>
+          <p style="color:#d1d5db;font-size:10px;margin:4px 0 0;">If you did not book this appointment, please contact us immediately.</p>
+        </div>
+      </div>`,
+    textBody: `Appointment Confirmed!\nDoctor: Dr. ${doctorName} (${specialty})\nDate: ${date} at ${time}\nHospital: ${hospitalName}\n${isVideo ? `Meeting Link: ${meetingLink}\n` : ''}Fee: ₹${fee}\n\nView your appointment: ${APP_URL}/dashboard/appointments`,
+  })
+}
+

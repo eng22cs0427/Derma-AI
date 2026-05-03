@@ -9,7 +9,7 @@ import { validateLiveFrame } from '@/lib/azure-openai-vision'
  * - Image quality (lighting, blur)
  *
  * NO database save — pure real-time feedback only.
- * Does NOT call ML model or Azure CV — GPT-4o only for speed.
+ * Strict 3-second timeout so the UI never hangs.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -31,7 +31,29 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const result = await validateLiveFrame(imageBase64, expectedBodyPart)
+    // Enforce a strict 3-second server-side timeout
+    const result = await Promise.race([
+      validateLiveFrame(imageBase64, expectedBodyPart),
+      new Promise<ReturnType<typeof validateLiveFrame>>(resolve =>
+        setTimeout(
+          () =>
+            resolve(
+              Promise.resolve({
+                is_skin_visible: true,
+                detected_body_part: expectedBodyPart,
+                matches_expected: true,
+                lesion_visible: false,
+                image_quality: 'good' as const,
+                ready_to_capture: false,
+                guidance_message:
+                  'AI check timed out — ensure good lighting, then capture manually.',
+              })
+            ),
+          3000
+        )
+      ),
+    ])
+
     return NextResponse.json(result)
   } catch (err) {
     console.error('[validate-frame] Error:', err)
@@ -43,7 +65,7 @@ export async function POST(request: NextRequest) {
       lesion_visible: false,
       image_quality: 'good',
       ready_to_capture: false,
-      guidance_message: 'AI validation temporarily unavailable. You can still capture manually.',
+      guidance_message: 'AI validation unavailable. Use good lighting and capture manually.',
     })
   }
 }

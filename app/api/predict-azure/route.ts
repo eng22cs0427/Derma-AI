@@ -159,15 +159,34 @@ function fuseResults(
 ) {
   // Check if it's a skin image at all
   const azureSkinConf = azure?.skinConfidence ?? 0.5
-  if (!gpt.is_skin_image && azureSkinConf < 0.2) {
+
+  // Determine what was detected so we can show a meaningful message
+  const detectedThing = gpt.detected_body_part && gpt.detected_body_part !== 'other'
+    ? gpt.detected_body_part
+    : gpt.primary_condition && gpt.primary_condition !== 'Analysis Pending'
+    ? gpt.primary_condition
+    : 'an unrecognised object'
+
+  // Fail if GPT explicitly says not skin AND azure confidence is low
+  const isNotSkin = !gpt.is_skin_image && azureSkinConf < 0.25
+  // Also fail if GPT says it IS skin but detected body part is clearly not human skin
+  // (e.g. it detected paper/document/object as something)
+  const isAmbiguous = gpt.is_fallback && azureSkinConf < 0.15
+
+  if (isNotSkin || isAmbiguous) {
+    const whatMsg = isAmbiguous
+      ? 'The image is unclear or the subject could not be identified as human skin.'
+      : `The image appears to show ${detectedThing} — not a skin area. Please capture a close-up of the skin.`
     return {
       error: 'not_skin_image',
+      validation_error: true,
+      what_detected: detectedThing,
       prediction: 'error',
-      prediction_name: 'Image Not Recognized',
+      prediction_name: 'Invalid Image',
       confidence: 0,
       severity: 'None' as SeverityLevel,
       severity_label: 'Please retake with a clear skin image',
-      message: 'Please capture a clear, close-up image of the skin area to be analyzed.',
+      message: whatMsg,
       class_probabilities: {},
       icd10: '',
       fitzpatrick_type: 'II',
@@ -182,7 +201,11 @@ function fuseResults(
       needs_doctor_review: false,
       engines_used: { azure_cv: !!azure, gpt4o: true, ml_model: !!ml },
       body_part: bodyPart,
-      body_part_matches: gpt.body_part_matches_selection,
+      body_part_matches: false,
+      symptoms: [],
+      treatments: [],
+      precautions: [],
+      specialists: [],
     }
   }
 
@@ -190,10 +213,11 @@ function fuseResults(
   const gptConfidence = gpt.confidence
 
   // Healthy skin detection
-  const isHealthy =
+  const isHealthy = !gpt.is_fallback && (
     (mlConfidence < 0.28 && gptConfidence < 0.28) ||
     gpt.condition_code === 'healthy' ||
     (typeof ml?.prediction === 'string' && ml.prediction === 'nv' && mlConfidence < 0.40 && gptConfidence < 0.30)
+  )
 
   if (isHealthy) {
     const diseaseInfo = DISEASE_DB['healthy']

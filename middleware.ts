@@ -19,20 +19,13 @@ export default clerkMiddleware(async (auth, req: NextRequest) => {
     const session = await auth()
     const role = (session.sessionClaims?.publicMetadata as Record<string, unknown>)?.role as string || 'patient'
 
-    // Admin route protection
-    if (isAdminRoute(req) && role !== 'admin') {
-      return NextResponse.redirect(new URL('/dashboard', req.url))
-    }
+    // We now rely exclusively on the Server Component Layouts 
+    // (app/admin/layout.tsx and app/doctor-dashboard/layout.tsx)
+    // for secure, database-driven role verification. This prevents
+    // JWT caching issues when an admin upgrades a user's role.
 
-    // Doctor route protection
-    if (isDoctorRoute(req) && role !== 'doctor' && role !== 'admin') {
-      return NextResponse.redirect(new URL('/dashboard', req.url))
-    }
-
-    // Auto-redirect doctors to their dashboard
-    if (req.nextUrl.pathname === '/dashboard' && role === 'doctor') {
-      return NextResponse.redirect(new URL('/doctor-dashboard', req.url))
-    }
+    // Auto-redirect logic has also been moved to app/dashboard/layout.tsx
+    // to ensure it uses the fresh database role.
   }
 
   // HIPAA-style security headers on all API responses

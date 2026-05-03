@@ -66,6 +66,7 @@ export interface IAppointment {
   _id?: ObjectId
   patientId: ObjectId
   doctorId?: ObjectId | null
+  doctorClerkId?: string | null   // clerk user id of the doctor
   doctorName: string
   specialty?: string
   appointmentDate: string
@@ -82,9 +83,24 @@ export interface IAppointment {
   paymentId?: string
   fee?: number
   type?: string
+  confirmedAt?: Date
+  emailSent?: boolean
   createdAt: Date
   updatedAt: Date
 }
+
+// Tracks which time slots a doctor has opened or blocked for a given date
+export interface IDoctorAvailabilitySlot {
+  _id?: ObjectId
+  doctorClerkId: string
+  date: string           // ISO date string YYYY-MM-DD
+  timeSlot: string       // e.g. "09:00", "09:30"
+  isBooked: boolean
+  appointmentId?: ObjectId | null
+  createdAt: Date
+  updatedAt: Date
+}
+
 
 export interface IOrder {
   _id?: ObjectId

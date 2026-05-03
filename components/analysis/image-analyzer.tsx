@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect, useCallback } from "react"
 import {
   Upload, X, AlertCircle, CheckCircle2, Loader2, Stethoscope,
   AlertTriangle, Volume2, Download, Clock, Brain, ChevronRight,
@@ -34,6 +34,8 @@ interface SkinResult {
   severity_label: string
   urgency: string
   message?: string
+  what_detected?: string
+  validation_error?: boolean
   fitzpatrick_type: string
   skin_tone: string
   abcde: Record<string, string | string[]>
@@ -66,11 +68,11 @@ const ANALYSIS_STEPS = [
 
 function SeverityBadge({ severity }: { severity: string }) {
   const cfg: Record<string, { bg: string; text: string; border: string; label: string }> = {
-    Critical: { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-700 dark:text-red-300', border: 'border-red-200 dark:border-red-800', label: '🔴 Critical' },
-    High:     { bg: 'bg-orange-100 dark:bg-orange-900/30', text: 'text-orange-700 dark:text-orange-300', border: 'border-orange-200 dark:border-orange-800', label: '🟠 High' },
-    Moderate: { bg: 'bg-yellow-100 dark:bg-yellow-900/30', text: 'text-yellow-700 dark:text-yellow-300', border: 'border-yellow-200 dark:border-yellow-800', label: '🟡 Moderate' },
-    Low:      { bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-700 dark:text-blue-300', border: 'border-blue-200 dark:border-blue-800', label: '🔵 Low' },
-    None:     { bg: 'bg-emerald-100 dark:bg-emerald-900/30', text: 'text-emerald-700 dark:text-emerald-300', border: 'border-emerald-200 dark:border-emerald-800', label: '✅ None' },
+    Critical: { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-700 dark:text-red-300', border: 'border-red-200 dark:border-red-800', label: 'Critical' },
+    High:     { bg: 'bg-orange-100 dark:bg-orange-900/30', text: 'text-orange-700 dark:text-orange-300', border: 'border-orange-200 dark:border-orange-800', label: 'High' },
+    Moderate: { bg: 'bg-yellow-100 dark:bg-yellow-900/30', text: 'text-yellow-700 dark:text-yellow-300', border: 'border-yellow-200 dark:border-yellow-800', label: 'Moderate' },
+    Low:      { bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-700 dark:text-blue-300', border: 'border-blue-200 dark:border-blue-800', label: 'Low' },
+    None:     { bg: 'bg-emerald-100 dark:bg-emerald-900/30', text: 'text-emerald-700 dark:text-emerald-300', border: 'border-emerald-200 dark:border-emerald-800', label: 'None' },
   }
   const s = cfg[severity] || cfg['Low']
   return (
@@ -99,7 +101,7 @@ function ABCDEPanel({ abcde }: { abcde: Record<string, string | string[]> }) {
             <p className={`text-xs font-semibold ${c.danger ? 'text-red-600 dark:text-red-400' : 'text-gray-600 dark:text-gray-400'}`}>{c.label}</p>
             <p className="text-sm text-gray-800 dark:text-gray-200">{c.value || 'Unable to assess'}</p>
           </div>
-          <span>{c.danger ? '⚠️' : '✅'}</span>
+          <span>{c.danger ? 'Warning' : 'Pass'}</span>
         </div>
       ))}
     </div>
@@ -115,9 +117,68 @@ export function ImageAnalyzer() {
   const [analysisStepIdx, setAnalysisStepIdx] = useState(0)
   const [result, setResult] = useState<SkinResult | null>(null)
   const [analysisSaved, setAnalysisSaved] = useState(false)
+  // Live elapsed timer during analysis
+  const [elapsedSecs, setElapsedSecs] = useState(0)
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const analysisRef = useRef<HTMLDivElement>(null)
   const { refreshHistory } = useMedicalHistory()
+
+  // ── Pending-ticket gate ──────────────────────────────────────────────────
+  // If the patient already has an open ticket (awaiting doctor review),
+  // block new scans until the doctor closes it.
+  const [pendingTicket, setPendingTicket] = useState<{
+    id: string; diagnosis: string; riskLevel: string
+    analysisDate: string; confidence: string
+  } | null | undefined>(undefined) // undefined = still loading
+
+  useEffect(() => {
+    fetch('/api/patient/skin-tickets')
+      .then(r => r.ok ? r.json() : [])
+      .then((tickets: Array<{
+        id: string; diagnosis: string; riskLevel: string
+        analysisDate: string; ticketStatus: string; confidence: string
+      }>) => {
+        const open = tickets.find(t => t.ticketStatus === 'Open')
+        setPendingTicket(open ?? null)
+      })
+      .catch(() => setPendingTicket(null)) // on error, don't block
+  }, [])
+
+
+  // Estimated total seconds (rough: Azure CV ~3s + ML ~4s + GPT-4o ~10s + fusion ~1s)
+  const ESTIMATED_SECS = 20
+
+  // Request browser notification permission once on mount
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission()
+    }
+  }, [])
+
+  const sendBrowserNotification = useCallback((data: SkinResult) => {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return
+    const isDanger = ['Critical', 'High'].includes(data.severity)
+    const isHealthy = data.prediction === 'healthy'
+    const icon = isDanger ? '🚨' : isHealthy ? '✅' : '⚠️'
+    const title = isDanger
+      ? `${icon} DermaSense: Urgent — ${data.severity} Risk Detected`
+      : isHealthy
+      ? `${icon} DermaSense: Healthy Skin — No Issues Found`
+      : `${icon} DermaSense: Analysis Complete`
+    const body = isHealthy
+      ? 'Your skin looks healthy. No significant condition detected.'
+      : `${data.prediction_name} — ${(data.confidence * 100).toFixed(1)}% confidence · ${data.severity} severity · ${data.urgency}`
+    try {
+      new Notification(title, {
+        body,
+        icon: '/favicon.ico',
+        badge: '/favicon.ico',
+        tag: 'dermasense-analysis',
+        requireInteraction: isDanger,
+      })
+    } catch { /* Safari / blocked */ }
+  }, [])
 
   const bodyPartInfo = BODY_PARTS.find(p => p.id === bodyPart)
 
@@ -168,6 +229,14 @@ export function ImageAnalyzer() {
     setStep('ANALYZING')
     setIsAnalyzing(true)
     setAnalysisSaved(false)
+    setElapsedSecs(0)
+    setAnalysisStepIdx(0)
+
+    // Live elapsed-time counter
+    if (timerRef.current) clearInterval(timerRef.current)
+    timerRef.current = setInterval(() => {
+      setElapsedSecs(s => s + 1)
+    }, 1000)
 
     // Animate progress steps
     let idx = 0
@@ -192,25 +261,45 @@ export function ImageAnalyzer() {
         throw new Error(errData.error || 'Analysis failed')
       }
 
-      const data = await res.json()
+      const data: SkinResult = await res.json()
       setResult(data)
       refreshHistory()
       setAnalysisSaved(true)
 
-      await new Promise(r => setTimeout(r, 800))
+      // Stop timer
+      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
+
+      await new Promise(r => setTimeout(r, 600))
       setStep('RESULT')
 
-      if (data.severity === 'Critical') {
-        toast.error('Analysis Complete — Critical condition detected', {
-          description: `${data.prediction_name} — ${(data.confidence * 100).toFixed(1)}% confidence`,
+      // ── In-app toasts with severity colour
+      const isDanger = ['Critical', 'High'].includes(data.severity)
+      if (data.prediction === 'error' || data.error === 'not_skin_image') {
+        toast.warning('Invalid Image — Please retake', {
+          description: data.message || 'Capture a clear, close-up photo of the skin.',
+        })
+      } else if (isDanger) {
+        toast.error(`🚨 ${data.severity} Risk — ${data.prediction_name}`, {
+          description: `${(data.confidence * 100).toFixed(1)}% confidence · ${data.urgency}`,
+          duration: 8000,
         })
       } else if (data.prediction === 'healthy') {
-        toast.success('Analysis Complete — Healthy Skin!', { description: 'No significant skin disease detected.' })
+        toast.success('✅ Healthy Skin — No Disease Detected', {
+          description: 'Continue routine skin care and annual check-ups.',
+          duration: 6000,
+        })
       } else {
-        toast.success('Analysis Complete', { description: `${data.prediction_name} — ${(data.confidence * 100).toFixed(1)}% confidence` })
+        toast.success(`Analysis Complete — ${data.prediction_name}`, {
+          description: `${(data.confidence * 100).toFixed(1)}% confidence · ${data.severity} severity`,
+        })
       }
+
+      // ── Browser push notification
+      sendBrowserNotification(data)
+
     } catch (err) {
       clearInterval(stepInterval)
+      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
       toast.error('Analysis Failed', { description: err instanceof Error ? err.message : 'Please try again.' })
       setStep('CAMERA')
     } finally {
@@ -238,15 +327,152 @@ export function ImageAnalyzer() {
   const exportToPDF = async () => {
     if (!analysisRef.current) return
     const { default: html2pdf } = await import('html2pdf.js')
-    html2pdf().from(analysisRef.current).set({
-      margin: [0.5, 0.5, 1, 0.5],
-      filename: `DermaSense_Analysis_${result?.prediction_name || 'result'}.pdf`,
-      html2canvas: { scale: 2 },
-      jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' },
-    }).save()
+    // Clone and sanitise for PDF — remove motion wrappers' inline transforms
+    const element = analysisRef.current
+    html2pdf()
+      .set({
+        margin: [0.4, 0.4, 0.6, 0.4],
+        filename: `DermaSense_Analysis_${result?.prediction_name?.replace(/\s+/g, '_') || 'result'}.pdf`,
+        html2canvas: {
+          scale: 1.8,
+          useCORS: true,
+          allowTaint: true,
+          scrollX: 0,
+          scrollY: 0,
+          windowWidth: 900,
+        },
+        jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' },
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'], before: '.pdf-page-break' },
+      })
+      .from(element)
+      .save()
   }
 
   // ─── RENDER ────────────────────────────────────────────────────────────────
+
+  // Still checking for pending ticket
+  if (pendingTicket === undefined) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 gap-4">
+        <Loader2 className="h-8 w-8 animate-spin text-emerald-500" />
+        <p className="text-sm text-muted-foreground">Checking your analysis status…</p>
+      </div>
+    )
+  }
+
+  // Pending ticket exists — block new scan
+  if (pendingTicket !== null) {
+    const riskColors: Record<string, string> = {
+      'Very High': 'bg-red-50 border-red-200 text-red-700 dark:bg-red-950/30 dark:border-red-800',
+      High:        'bg-orange-50 border-orange-200 text-orange-700 dark:bg-orange-950/30 dark:border-orange-800',
+      Medium:      'bg-yellow-50 border-yellow-200 text-yellow-700 dark:bg-yellow-950/30 dark:border-yellow-800',
+      Low:         'bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/30 dark:border-emerald-800',
+    }
+    const riskKey = Object.keys(riskColors).find(k => pendingTicket.riskLevel.includes(k)) ?? 'Low'
+    const riskClass = riskColors[riskKey]
+    const isHighRisk = ['Very High', 'High'].includes(riskKey)
+
+    return (
+      <div className="space-y-6">
+        <Card className="border-2 border-amber-200 dark:border-amber-700 shadow-xl overflow-hidden">
+          <div className="bg-gradient-to-r from-amber-400 to-orange-400 h-2" />
+          <CardContent className="pt-8 pb-8 space-y-6">
+            {/* Icon + heading */}
+            <div className="flex flex-col items-center text-center gap-3">
+              <div className="w-16 h-16 rounded-full bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center">
+                <Clock className="h-8 w-8 text-amber-600" />
+              </div>
+              <div>
+                <h2 className="text-xl font-black text-slate-900 dark:text-white">Analysis Under Doctor Review</h2>
+                <p className="text-sm text-slate-500 mt-1 max-w-md">
+                  Your previous scan is currently being reviewed by a dermatologist.
+                  You can start a new scan once the doctor has reviewed and closed your ticket.
+                </p>
+              </div>
+            </div>
+
+            {/* Pending ticket details */}
+            <div className={`rounded-xl border-2 p-4 space-y-3 ${riskClass}`}>
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <Microscope className="h-5 w-5 shrink-0" />
+                  <span className="font-bold text-base">{pendingTicket.diagnosis}</span>
+                </div>
+                <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border-2 ${isHighRisk ? 'bg-red-100 border-red-300 text-red-700' : 'bg-emerald-100 border-emerald-300 text-emerald-700'}`}>
+                  {pendingTicket.riskLevel} Risk
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div>
+                  <p className="text-[10px] uppercase font-bold opacity-60 tracking-wider">Scanned on</p>
+                  <p className="font-semibold">
+                    {new Date(pendingTicket.analysisDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
+                  </p>
+                </div>
+                {pendingTicket.confidence && (
+                  <div>
+                    <p className="text-[10px] uppercase font-bold opacity-60 tracking-wider">AI Confidence</p>
+                    <p className="font-semibold">{pendingTicket.confidence}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Step progress */}
+            <div className="flex items-center justify-center gap-0">
+              {[
+                { label: 'Scanned', done: true },
+                { label: 'AI Analysed', done: true },
+                { label: 'Doctor Review', done: false },
+                { label: 'Closed', done: false },
+              ].map((s, i, arr) => (
+                <div key={s.label} className="flex items-center">
+                  <div className="flex flex-col items-center">
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2 ${
+                      s.done ? 'bg-blue-600 border-blue-600 text-white' : i === 2 ? 'bg-amber-400 border-amber-400 text-white animate-pulse' : 'bg-white border-slate-300 text-slate-400'
+                    }`}>
+                      {s.done ? '✓' : i === 2 ? '…' : i + 1}
+                    </div>
+                    <span className={`mt-1 text-[9px] font-semibold whitespace-nowrap ${
+                      s.done ? 'text-blue-600' : i === 2 ? 'text-amber-600 font-bold' : 'text-slate-400'
+                    }`}>{s.label}</span>
+                  </div>
+                  {i < arr.length - 1 && (
+                    <div className={`h-0.5 w-8 sm:w-12 mx-1 mb-4 ${
+                      s.done ? 'bg-blue-600' : 'bg-slate-200'
+                    }`} />
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* CTA */}
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <a
+                href="/dashboard/skin-tickets"
+                className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm transition-colors shadow-sm"
+              >
+                <Eye className="h-4 w-4" /> View My Ticket Status
+              </a>
+              {isHighRisk && (
+                <a
+                  href="/dashboard/appointments"
+                  className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm transition-colors shadow-sm"
+                >
+                  <Stethoscope className="h-4 w-4" /> Book Urgent Appointment
+                </a>
+              )}
+            </div>
+
+            <p className="text-center text-xs text-slate-400">
+              You will receive an email notification once the doctor reviews your report and closes the ticket.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       {/* Step Breadcrumb */}
@@ -260,7 +486,7 @@ export function ImageAnalyzer() {
                 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
                 : 'bg-gray-100 text-gray-400 dark:bg-gray-800'
             }`}>
-              {i < currentStepIdx ? '✓ ' : `${i + 1}. `}{s.label}
+              {i < currentStepIdx ? 'Done - ' : `${i + 1}. `}{s.label}
             </div>
             {i < STEPS_DEF.length - 1 && <ChevronRight className="h-3 w-3 text-gray-400" />}
           </div>
@@ -302,8 +528,8 @@ export function ImageAnalyzer() {
               <CardContent>
                 <Tabs defaultValue="camera">
                   <TabsList className="w-full mb-4">
-                    <TabsTrigger value="camera" className="flex-1" id="camera-tab">📷 Live Camera</TabsTrigger>
-                    <TabsTrigger value="upload" className="flex-1" id="upload-tab">📁 Upload Image</TabsTrigger>
+                    <TabsTrigger value="camera" className="flex-1" id="camera-tab">Live Camera</TabsTrigger>
+                    <TabsTrigger value="upload" className="flex-1" id="upload-tab">Upload Image</TabsTrigger>
                   </TabsList>
 
                   <TabsContent value="camera">
@@ -333,121 +559,254 @@ export function ImageAnalyzer() {
         )}
 
         {/* ── STEP 3: Analysis Progress ─────────────────────────────────────── */}
-        {step === 'ANALYZING' && (
-          <motion.div key="analyzing" initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}>
-            <Card className="border-2 border-emerald-100 dark:border-emerald-900/30 shadow-xl overflow-hidden">
-              <div className="bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 h-2" />
-              <CardContent className="py-12">
-                <div className="max-w-md mx-auto space-y-8">
-                  <div className="text-center">
-                    <motion.div
-                      animate={{ rotate: 360 }}
-                      transition={{ repeat: Infinity, duration: 2, ease: 'linear' }}
-                      className="inline-flex p-5 rounded-full bg-gradient-to-br from-emerald-100 to-teal-100 dark:from-emerald-900/40 dark:to-teal-900/40 mb-4"
-                    >
-                      <Brain className="h-10 w-10 text-emerald-600 dark:text-emerald-400" />
-                    </motion.div>
-                    <h3 className="text-xl font-bold text-emerald-900 dark:text-emerald-100">AI Analysis in Progress</h3>
-                    <p className="text-sm text-muted-foreground mt-1">Running 3 AI engines simultaneously</p>
-                  </div>
+        {step === 'ANALYZING' && (() => {
+          const remaining = Math.max(0, ESTIMATED_SECS - elapsedSecs)
+          const overallPct = Math.min(100, Math.round((elapsedSecs / ESTIMATED_SECS) * 100))
+          const mins = Math.floor(remaining / 60)
+          const secs = remaining % 60
+          const timeLabel = remaining === 0
+            ? 'Finalising…'
+            : mins > 0
+            ? `~${mins}m ${secs}s remaining`
+            : `~${secs}s remaining`
+          // circle SVG params
+          const R = 36, C = 2 * Math.PI * R
+          const strokeDash = C - (overallPct / 100) * C
 
-                  {ANALYSIS_STEPS.map((s, i) => (
-                    <motion.div
-                      key={i}
-                      initial={{ opacity: 0.3 }}
-                      animate={{ opacity: i <= analysisStepIdx ? 1 : 0.35 }}
-                      className="space-y-1.5"
-                    >
-                      <div className="flex justify-between text-sm">
-                        <span className={`font-medium ${i <= analysisStepIdx ? 'text-emerald-700 dark:text-emerald-300' : 'text-gray-400'}`}>
-                          {i < analysisStepIdx ? '✅' : i === analysisStepIdx ? '⏳' : '⬜'} {s.label}
-                        </span>
-                        <span className="text-muted-foreground">{i <= analysisStepIdx ? s.progress : 0}%</span>
+          return (
+            <motion.div key="analyzing" initial={{ opacity: 0, scale: 0.97 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}>
+              <Card className="border-2 border-emerald-100 dark:border-emerald-900/30 shadow-xl overflow-hidden">
+                <div className="bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 h-2" />
+                <CardContent className="py-10 px-4 sm:px-8">
+                  <div className="max-w-lg mx-auto space-y-6">
+
+                    {/* ── Header: brain + circular timer ── */}
+                    <div className="flex flex-col sm:flex-row items-center gap-6">
+                      <div className="relative shrink-0">
+                        {/* Circular countdown ring */}
+                        <svg width="100" height="100" className="-rotate-90">
+                          <circle cx="50" cy="50" r={R} fill="none" stroke="currentColor"
+                            className="text-emerald-100 dark:text-emerald-900/40" strokeWidth="7" />
+                          <motion.circle
+                            cx="50" cy="50" r={R} fill="none"
+                            stroke="url(#timerGrad)" strokeWidth="7"
+                            strokeLinecap="round"
+                            strokeDasharray={C}
+                            strokeDashoffset={strokeDash}
+                            transition={{ duration: 0.8, ease: 'easeOut' }}
+                          />
+                          <defs>
+                            <linearGradient id="timerGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                              <stop offset="0%" stopColor="#10b981" />
+                              <stop offset="100%" stopColor="#06b6d4" />
+                            </linearGradient>
+                          </defs>
+                        </svg>
+                        {/* Spinning brain inside ring */}
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 2, ease: 'linear' }}>
+                            <Brain className="h-7 w-7 text-emerald-600 dark:text-emerald-400" />
+                          </motion.div>
+                        </div>
+                        {/* Percentage overlay */}
+                        <div className="absolute -bottom-1 left-1/2 -translate-x-1/2">
+                          <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 bg-white dark:bg-gray-900 px-1.5 rounded-full border border-emerald-200 dark:border-emerald-700">
+                            {overallPct}%
+                          </span>
+                        </div>
                       </div>
-                      <Progress
-                        value={i <= analysisStepIdx ? s.progress : 0}
-                        className="h-2 [&>div]:bg-gradient-to-r [&>div]:from-emerald-500 [&>div]:to-teal-500"
-                      />
-                    </motion.div>
-                  ))}
 
-                  <div className="flex justify-center gap-4 pt-2">
-                    {['Azure CV', 'ML Model', 'GPT-4o'].map(e => (
-                      <motion.div
-                        key={e}
-                        animate={{ opacity: [0.5, 1, 0.5] }}
-                        transition={{ repeat: Infinity, duration: 1.8, delay: Math.random() * 0.8 }}
-                        className="px-3 py-1.5 bg-emerald-100 dark:bg-emerald-900/30 rounded-full text-xs font-semibold text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
-                      >
-                        {e}
-                      </motion.div>
-                    ))}
+                      <div className="text-center sm:text-left flex-1">
+                        <h3 className="text-xl font-bold text-emerald-900 dark:text-emerald-100">AI Analysis in Progress</h3>
+                        <p className="text-sm text-muted-foreground mt-0.5">3 AI engines working in parallel</p>
+
+                        {/* ── Live timer display ── */}
+                        <div className="mt-3 flex flex-col sm:flex-row items-center sm:items-start gap-2 flex-wrap">
+                          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-700">
+                            <Clock className="h-3.5 w-3.5 text-emerald-600" />
+                            <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-300 tabular-nums">
+                              {String(Math.floor(elapsedSecs / 60)).padStart(2,'0')}:{String(elapsedSecs % 60).padStart(2,'0')} elapsed
+                            </span>
+                          </div>
+                          <motion.div
+                            key={timeLabel}
+                            initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-50 dark:bg-teal-900/30 border border-teal-200 dark:border-teal-700"
+                          >
+                            <Loader2 className="h-3.5 w-3.5 text-teal-600 animate-spin" />
+                            <span className="text-xs font-semibold text-teal-700 dark:text-teal-300 tabular-nums">
+                              {timeLabel}
+                            </span>
+                          </motion.div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* ── Per-step progress bars ── */}
+                    <div className="space-y-3">
+                      {ANALYSIS_STEPS.map((s, i) => {
+                        const isActive = i === analysisStepIdx
+                        const isDone   = i < analysisStepIdx
+                        const isPending = i > analysisStepIdx
+                        return (
+                          <motion.div
+                            key={i}
+                            initial={{ opacity: 0.3 }}
+                            animate={{ opacity: isPending ? 0.4 : 1 }}
+                            className={`p-3 rounded-xl border transition-all ${
+                              isDone   ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-800' :
+                              isActive ? 'bg-teal-50 border-teal-300 dark:bg-teal-900/20 dark:border-teal-700 shadow-sm' :
+                                         'bg-gray-50 border-gray-200 dark:bg-gray-800/50 dark:border-gray-700'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-1.5">
+                              <div className="flex items-center gap-2">
+                                {isDone
+                                  ? <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                                  : isActive
+                                  ? <Loader2 className="h-4 w-4 text-teal-500 animate-spin shrink-0" />
+                                  : <div className="h-4 w-4 rounded-full border-2 border-gray-300 dark:border-gray-600 shrink-0" />
+                                }
+                                <span className={`text-xs font-semibold ${
+                                  isDone ? 'text-emerald-700 dark:text-emerald-300' :
+                                  isActive ? 'text-teal-700 dark:text-teal-300' :
+                                  'text-gray-400'
+                                }`}>
+                                  {isDone ? '✓ ' : isActive ? '▶ ' : ''}{s.label}
+                                </span>
+                              </div>
+                              <span className={`text-xs tabular-nums font-bold ${
+                                isDone ? 'text-emerald-600' : isActive ? 'text-teal-600' : 'text-gray-400'
+                              }`}>
+                                {isDone ? s.progress : isActive ? s.progress : 0}%
+                              </span>
+                            </div>
+                            <Progress
+                              value={isDone ? s.progress : isActive ? s.progress : 0}
+                              className={`h-1.5 ${isActive ? '[&>div]:bg-gradient-to-r [&>div]:from-teal-500 [&>div]:to-cyan-500' : '[&>div]:bg-emerald-500'}`}
+                            />
+                          </motion.div>
+                        )
+                      })}
+                    </div>
+
+                    {/* ── Engine badges ── */}
+                    <div className="flex justify-center gap-3 pt-1 flex-wrap">
+                      {(['Azure CV', 'ML Model', 'GPT-4o'] as const).map((e, i) => (
+                        <motion.div
+                          key={e}
+                          animate={{ opacity: [0.5, 1, 0.5] }}
+                          transition={{ repeat: Infinity, duration: 1.8, delay: i * 0.4 }}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-100 dark:bg-emerald-900/30 rounded-full text-xs font-semibold text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
+                        >
+                          <motion.div
+                            className="w-2 h-2 rounded-full bg-emerald-500"
+                            animate={{ scale: [1, 1.4, 1] }}
+                            transition={{ repeat: Infinity, duration: 1.2, delay: i * 0.3 }}
+                          />
+                          {e}
+                        </motion.div>
+                      ))}
+                    </div>
+
+                    {/* ── Notification note ── */}
+                    <p className="text-center text-xs text-muted-foreground pt-1">
+                      You&apos;ll receive a browser notification when results are ready
+                    </p>
+
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        )}
+                </CardContent>
+              </Card>
+            </motion.div>
+          )
+        })()}
 
         {/* ── STEP 4: Results ──────────────────────────────────────────────────── */}
         {step === 'RESULT' && result && (
-          <motion.div key="result" ref={analysisRef} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
+          <motion.div key="result" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
+            <div ref={analysisRef}>
 
             {/* ── Not Skin / Error ─── */}
             {(result.error === 'not_skin_image' || result.prediction === 'error') && (
-              <Alert variant="destructive" className="mb-4">
-                <AlertCircle className="h-4 w-4" />
-                <AlertTitle>Image Not Recognized</AlertTitle>
-                <AlertDescription>
-                  {result.message as string || 'Please capture a clear, close-up photo of a skin area.'}
-                  <Button variant="outline" size="sm" className="mt-3 w-full" onClick={resetAll}>🔄 Try Again</Button>
-                </AlertDescription>
-              </Alert>
+              <div className="rounded-2xl border-2 border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 p-6 mb-4 space-y-4">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 rounded-full bg-red-100 dark:bg-red-800 shrink-0">
+                    <AlertCircle className="h-6 w-6 text-red-600 dark:text-red-300" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-lg font-bold text-red-700 dark:text-red-300 mb-1">Invalid or Unclear Image</h3>
+                    <p className="text-sm text-red-600 dark:text-red-400">
+                      {result.message || 'Please capture a clear, close-up photo of the skin area.'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* What was detected */}
+                {result.what_detected && (
+                  <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-white dark:bg-gray-800 border border-red-200 dark:border-red-700">
+                    <Eye className="h-4 w-4 text-red-500 shrink-0" />
+                    <p className="text-sm text-gray-700 dark:text-gray-300">
+                      <span className="font-semibold">AI detected: </span>
+                      <span className="capitalize">{result.what_detected}</span>
+                    </p>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-red-600 dark:text-red-400">
+                  <div className="flex items-center gap-1.5"><CheckCircle2 className="h-3.5 w-3.5" /> Use a real skin area</div>
+                  <div className="flex items-center gap-1.5"><CheckCircle2 className="h-3.5 w-3.5" /> Ensure good lighting</div>
+                  <div className="flex items-center gap-1.5"><CheckCircle2 className="h-3.5 w-3.5" /> Hold camera steady & close</div>
+                </div>
+
+                <Button variant="destructive" size="lg" className="w-full" onClick={resetAll}>
+                  Try Again with a New Image
+                </Button>
+              </div>
             )}
 
             {result.prediction !== 'error' && (
               <Card className="overflow-hidden border-2 border-emerald-100 dark:border-emerald-900/30 shadow-2xl">
-                <div className={`h-3 bg-gradient-to-r ${
+                <div className={`h-2 bg-gradient-to-r ${
                   result.severity === 'Critical' ? 'from-red-500 to-rose-600' :
                   result.severity === 'High' ? 'from-orange-500 to-amber-500' :
                   result.severity === 'Moderate' ? 'from-yellow-400 to-amber-500' :
                   result.prediction === 'healthy' ? 'from-emerald-400 to-teal-500' :
                   'from-blue-400 to-teal-400'
                 }`} />
-                <CardHeader className="bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-gray-800 dark:to-gray-900">
-                  <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        {bodyPartInfo && (
-                          <span className="inline-flex items-center gap-1 px-2 py-1 bg-white dark:bg-gray-800 rounded-full text-xs font-medium border shadow-sm">
-                            <span>{bodyPartInfo.icon}</span>
-                            <span>{bodyPartInfo.label}</span>
-                          </span>
-                        )}
-                        <span className="text-xs text-muted-foreground font-mono">{result.icd10 as string}</span>
-                        <SeverityBadge severity={result.severity as string} />
-                      </div>
-                      <CardTitle className="text-2xl text-emerald-900 dark:text-emerald-100">
-                        {result.prediction === 'healthy' ? '✅ Healthy Skin Detected' : `${result.prediction_name as string}`}
-                      </CardTitle>
+                <CardHeader className="bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-gray-800 dark:to-gray-900 px-4 sm:px-6 py-4">
+                  <div className="flex flex-col gap-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {bodyPartInfo && (
+                        <span className="inline-flex items-center gap-1 px-2 py-1 bg-white dark:bg-gray-800 rounded-full text-xs font-medium border shadow-sm">
+                          <span>{bodyPartInfo.icon}</span>
+                          <span>{bodyPartInfo.label}</span>
+                        </span>
+                      )}
+                      <span className="text-xs text-muted-foreground font-mono">{result.icd10 as string}</span>
+                      <SeverityBadge severity={result.severity as string} />
                       {analysisSaved && (
                         <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-100 dark:bg-emerald-900/30 rounded-full text-xs text-emerald-700 dark:text-emerald-300 font-medium">
-                          <CheckCircle2 className="h-3 w-3" /> Saved to History
+                          <CheckCircle2 className="h-3 w-3" /> Saved
                         </motion.div>
                       )}
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Button variant="outline" size="sm" onClick={speakSummary} id="speak-btn">
-                        <Volume2 className="h-4 w-4 sm:mr-1" /><span className="hidden sm:inline">Speak</span>
-                      </Button>
-                      <Button variant="outline" size="sm" onClick={exportToPDF} id="export-pdf-btn">
-                        <Download className="h-4 w-4 sm:mr-1" /><span className="hidden sm:inline">Export PDF</span>
-                      </Button>
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                      <CardTitle className="text-xl sm:text-2xl text-emerald-900 dark:text-emerald-100 leading-tight">
+                        {result.prediction === 'healthy' ? 'Healthy Skin Detected' : `${result.prediction_name as string}`}
+                      </CardTitle>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Button variant="outline" size="sm" onClick={speakSummary} id="speak-btn">
+                          <Volume2 className="h-4 w-4 sm:mr-1" /><span className="hidden sm:inline">Speak</span>
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={exportToPDF} id="export-pdf-btn">
+                          <Download className="h-4 w-4 sm:mr-1" /><span className="hidden sm:inline">Export PDF</span>
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </CardHeader>
 
-                <CardContent className="space-y-6 pt-6">
+                <CardContent className="space-y-4 sm:space-y-6 px-4 sm:px-6 pt-4 sm:pt-6">
                   {/* ── Critical / High warnings ── */}
                   {result.severity === 'Critical' && (
                     <Alert className="bg-red-50 border-red-300 dark:bg-red-900/20 dark:border-red-800">
@@ -480,7 +839,7 @@ export function ImageAnalyzer() {
                   {/* ── Healthy Card ── */}
                   {result.prediction === 'healthy' && (
                     <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} className="p-6 rounded-xl bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-900/30 dark:to-teal-900/30 border-2 border-emerald-200 dark:border-emerald-800 text-center">
-                      <div className="text-5xl mb-3">✅</div>
+                      <div className="text-5xl mb-3">Health Status</div>
                       <h3 className="text-xl font-bold text-emerald-800 dark:text-emerald-200 mb-2">Healthy Skin — No Disease Detected</h3>
                       <p className="text-sm text-emerald-700 dark:text-emerald-300 max-w-md mx-auto">{result.clinical_notes as string}</p>
                       <div className="mt-4 flex justify-center gap-3 flex-wrap">
@@ -495,15 +854,15 @@ export function ImageAnalyzer() {
                     <div className="flex gap-2 flex-wrap">
                       {Object.entries(result.engines_used as Record<string, boolean>).map(([engine, used]) => (
                         <span key={engine} className={`px-2.5 py-1 rounded-full text-xs font-medium border ${used ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800' : 'bg-gray-100 text-gray-400 border-gray-200 dark:bg-gray-800 dark:border-gray-700'}`}>
-                          {used ? '✅' : '❌'} {engine.replace('_', ' ').toUpperCase()}
+                          {used ? 'Used' : 'Skipped'} {engine.replace('_', ' ').toUpperCase()}
                         </span>
                       ))}
                     </div>
                   )}
 
-                  <div className="grid md:grid-cols-2 gap-6">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
                     {/* ── Left column ── */}
-                    <div className="space-y-4">
+                    <div className="space-y-3 sm:space-y-4">
                       {result.prediction !== 'healthy' && (
                         <>
                           {/* Core diagnosis */}
@@ -555,7 +914,7 @@ export function ImageAnalyzer() {
                                 <p className="text-sm font-semibold capitalize">{result.location as string}</p>
                               </div>
                               {result.body_part_matches === false && (
-                                <span className="ml-auto text-xs text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full">⚠️ Mismatch</span>
+                                <span className="ml-auto text-xs text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full">Mismatch</span>
                               )}
                             </motion.div>
                           )}
@@ -639,7 +998,7 @@ export function ImageAnalyzer() {
                     </div>
 
                     {/* ── Right column ── */}
-                    <div className="space-y-5">
+                    <div className="space-y-3 sm:space-y-5">
                       {result.prediction !== 'healthy' && result.abcde && (
                         <>
                           <h3 className="text-base font-semibold flex items-center gap-2">
@@ -697,12 +1056,19 @@ export function ImageAnalyzer() {
                         </div>
                       )}
 
-                      {/* Source image */}
+                      {/* Source image — constrained so PDF doesn't cut it */}
                       {previewUrl && (
-                        <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-xl border">
+                        <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-xl border pdf-avoid-break">
                           <p className="text-xs font-medium text-gray-500 mb-2">Analyzed Image</p>
-                          <div className="relative w-full h-44 rounded-lg overflow-hidden">
-                            <Image src={previewUrl} alt="Analyzed skin" fill className="object-contain" />
+                          <div className="relative w-full rounded-lg overflow-hidden" style={{ maxHeight: '220px' }}>
+                            <Image
+                              src={previewUrl}
+                              alt="Analyzed skin"
+                              width={600}
+                              height={220}
+                              className="w-full object-contain rounded-lg"
+                              style={{ maxHeight: '220px' }}
+                            />
                           </div>
                         </div>
                       )}
@@ -710,17 +1076,17 @@ export function ImageAnalyzer() {
                   </div>
                 </CardContent>
 
-                <CardFooter className="flex flex-col sm:flex-row justify-between gap-3 pt-0">
-                  <Button variant="outline" onClick={resetAll} id="analyze-another-btn">
-                    🔄 Analyze Another Area
+                <CardFooter className="flex flex-col sm:flex-row justify-between gap-3 px-4 sm:px-6 py-4 border-t">
+                  <Button variant="outline" onClick={resetAll} id="analyze-another-btn" className="w-full sm:w-auto">
+                    Analyze Another Area
                   </Button>
-                  <div className="flex gap-2">
-                    <Button variant="secondary" onClick={() => (window.location.href = '/dashboard/analysis/history')} id="view-history-btn">
+                  <div className="flex flex-col xs:flex-row gap-2 w-full sm:w-auto">
+                    <Button variant="secondary" onClick={() => (window.location.href = '/dashboard/analysis/history')} id="view-history-btn" className="w-full xs:w-auto">
                       <Clock className="h-4 w-4 mr-2" /> View History
                     </Button>
                     {result.severity !== 'None' && result.severity !== 'Low' && (
                       <Button onClick={() => (window.location.href = '/dashboard/appointments')} id="book-consultation-btn"
-                        className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white">
+                        className="w-full xs:w-auto bg-gradient-to-r from-emerald-600 to-teal-600 text-white">
                         Book Consultation
                       </Button>
                     )}
@@ -728,6 +1094,7 @@ export function ImageAnalyzer() {
                 </CardFooter>
               </Card>
             )}
+          </div>
           </motion.div>
         )}
       </AnimatePresence>

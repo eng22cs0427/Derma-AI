@@ -1,9 +1,3 @@
-/**
- * DermaSense AI — Azure OpenAI GPT-4o Vision Utility
- * Provides: Deep medical visual reasoning for 40+ skin conditions
- * Body-part aware, ABCDE analysis, Fitzpatrick typing, ICD-10 coding
- */
-
 export interface GptVisionResult {
   primary_condition: string
   condition_code: string
@@ -26,150 +20,204 @@ export interface GptVisionResult {
   clinical_notes: string
   urgency: string
   is_skin_image: boolean
+  // flag so callers know this came from fallback not real GPT analysis
+  is_fallback?: boolean
   error?: string
 }
 
-const FALLBACK_RESULT: GptVisionResult = {
-  primary_condition: 'Healthy Skin',
-  condition_code: 'healthy',
-  icd10: 'Z00.0',
-  confidence: 0.2,
-  severity: 'None',
-  fitzpatrick_type: 'II',
-  skin_tone_description: 'Light',
-  abcde: {
-    asymmetry: 'Symmetric',
-    border: 'Regular',
-    color: ['Uniform skin tone'],
-    diameter_estimate: 'N/A',
-    evolution_indicators: 'Unable to assess — AI service unavailable',
-  },
-  lesion_morphology: 'none',
-  detected_body_part: 'unknown',
-  body_part_matches_selection: true,
-  differential_diagnoses: [],
-  clinical_notes: 'GPT-4o Vision analysis was unavailable. Please consult a dermatologist for accurate diagnosis.',
-  urgency: 'Routine',
-  is_skin_image: true,
+// Deployment names to try in order — the env-set one first, then common defaults
+function getDeploymentCandidates() {
+  const envName = process.env.AZURE_OPENAI_DEPLOYMENT
+  const candidates = ['gpt-4o', 'gpt-4', 'gpt-4-vision-preview', 'gpt-4o-mini']
+  if (envName && !candidates.includes(envName)) {
+    candidates.unshift(envName)
+  }
+  return candidates
+}
+
+async function callAzureOpenAI(
+  endpoint: string,
+  apiKey: string,
+  deployment: string,
+  apiVersion: string,
+  messages: object[],
+  maxTokens: number,
+  timeoutMs: number
+): Promise<{ ok: boolean; status: number; data?: object; error?: string }> {
+  const url = `${endpoint}openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'api-key': apiKey },
+      body: JSON.stringify({ messages, max_tokens: maxTokens, temperature: 0.1 }),
+      signal: controller.signal,
+    })
+    clearTimeout(timer)
+
+    const text = await res.text()
+    let data: object
+    try { data = JSON.parse(text) } catch { data = {} }
+
+    if (!res.ok) {
+      // DeploymentNotFound means we should try the next candidate
+      const isDeploymentMissing = text.includes('DeploymentNotFound') || res.status === 404
+      return { ok: false, status: res.status, error: isDeploymentMissing ? 'DeploymentNotFound' : text.slice(0, 300) }
+    }
+
+    return { ok: true, status: res.status, data }
+  } catch (err) {
+    clearTimeout(timer)
+    const msg = err instanceof Error ? err.message : 'unknown'
+    return { ok: false, status: 0, error: msg }
+  }
 }
 
 export async function analyzeWithGPT4oVision(
   imageBuffer: Buffer,
-  selectedBodyPart: string = 'unknown'
+  selectedBodyPart = 'unknown'
 ): Promise<GptVisionResult> {
   const endpoint = process.env.AZURE_OPENAI_ENDPOINT
   const apiKey = process.env.AZURE_OPENAI_KEY
-  const deployment = process.env.AZURE_OPENAI_DEPLOYMENT || 'dermasense-gpt4o'
   const apiVersion = process.env.AZURE_OPENAI_API_VERSION || '2024-05-01-preview'
   const enabled = process.env.ENABLE_AZURE_OPENAI === 'true'
 
-  if (!enabled || !endpoint || !apiKey) {
-    console.warn('[azure-openai-vision] GPT-4o Vision not configured — returning fallback')
-    return FALLBACK_RESULT
+  const FALLBACK: GptVisionResult = {
+    primary_condition: 'Analysis Pending',
+    condition_code: 'unknown',
+    icd10: '',
+    confidence: 0,
+    severity: 'Low',
+    fitzpatrick_type: 'II',
+    skin_tone_description: 'Light to Medium',
+    abcde: {
+      asymmetry: 'Cannot assess',
+      border: 'Cannot assess',
+      color: ['Cannot assess'],
+      diameter_estimate: 'Cannot assess',
+      evolution_indicators: 'Cannot assess',
+    },
+    lesion_morphology: 'unknown',
+    detected_body_part: selectedBodyPart,
+    body_part_matches_selection: true,
+    differential_diagnoses: [],
+    clinical_notes: 'Automated vision analysis was unavailable. Clinical review is strongly recommended.',
+    urgency: 'Consult a dermatologist',
+    is_skin_image: true,
+    is_fallback: true,
   }
 
-  try {
-    const base64Image = imageBuffer.toString('base64')
+  if (!enabled || !endpoint || !apiKey) {
+    console.warn('[azure-openai-vision] Not configured, returning fallback')
+    return FALLBACK
+  }
 
-    const systemPrompt = `You are a board-certified AI dermatologist assistant with expertise in all skin conditions across all Fitzpatrick skin types (I-VI). You analyze clinical skin images and return structured medical assessments. Always be accurate, medically precise, and return only valid JSON.`
+  const base64Image = imageBuffer.toString('base64')
 
-    const userPrompt = `Analyze this skin image. The patient has indicated they are scanning their ${selectedBodyPart}.
+  // Strong clinical prompt — instructs the model to ALWAYS find and report the disease,
+  // never default to healthy unless skin truly is clear
+  const systemPrompt = `You are a board-certified dermatologist AI assistant with expert-level knowledge 
+of all skin conditions across all Fitzpatrick skin types (I-VI). You analyze clinical dermoscopy and 
+smartphone skin images. Your PRIMARY job is to identify pathological findings. 
 
-Return ONLY valid JSON (no markdown, no extra text):
+CRITICAL RULES:
+- If there is ANY visible lesion, discoloration, rash, spot, patch, or abnormality — classify it accurately
+- Only return condition_code "healthy" when skin is completely clear with zero findings
+- You must detect which specific region/part of the skin has the disease
+- Report confidence honestly — do not deflate it
+- Return ONLY valid JSON with no extra text`
+
+  const userPrompt = `Examine this skin image carefully. The patient says this is their ${selectedBodyPart}.
+
+Look for: lesions, moles, rashes, discoloration, scaling, crusting, blistering, pustules, macules, 
+papules, plaques, nodules, vesicles, or any texture change.
+
+Identify EXACTLY where in the image the pathological finding sits (e.g. "central lesion", 
+"upper-left quadrant", "diffuse across entire surface").
+
+Return ONLY this JSON (no markdown, no backticks):
 {
-  "primary_condition": "<full condition name e.g. Melanoma, Acne Vulgaris>",
-  "condition_code": "<code: mel|bcc|scc|akiec|mcc|lm|atypnv|nv|bkl|df|sk|ep|py|pso|ec|ros|acne|lu|lp|dc|bp|gr|imp|cel|hzv|tca|scb|mc|vr|hsv|fol|hid|vit|mel_hyp|an|pih|vasc|pur|cap|healthy>",
+  "primary_condition": "<full medical name e.g. Basal Cell Carcinoma, Acne Vulgaris, Psoriasis Plaque>",
+  "condition_code": "<mel|bcc|scc|akiec|mcc|lm|atypnv|nv|bkl|df|sk|ep|py|pso|ec|ros|acne|lu|lp|dc|bp|gr|imp|cel|hzv|tca|scb|mc|vr|hsv|fol|hid|vit|mel_hyp|an|pih|vasc|pur|cap|healthy>",
   "icd10": "<ICD-10 code>",
-  "confidence": <number 0.0-1.0>,
+  "confidence": <0.0-1.0 — be accurate, not modest>,
   "severity": "<Critical|High|Moderate|Low|None>",
   "fitzpatrick_type": "<I|II|III|IV|V|VI>",
-  "skin_tone_description": "<e.g. Very fair, Fair, Medium, Olive, Brown, Dark brown, Very dark>",
+  "skin_tone_description": "<Very fair|Fair|Medium|Olive|Brown|Dark brown|Very dark>",
+  "lesion_location_in_image": "<describe exactly where the disease/finding is in the frame>",
   "abcde": {
     "asymmetry": "<Symmetric|Mildly asymmetric|Highly asymmetric>",
     "border": "<Regular and smooth|Slightly irregular|Irregular and notched|Cannot assess>",
-    "color": ["<list each distinct color visible in the lesion>"],
-    "diameter_estimate": "<e.g. ~3mm, ~5mm, ~8mm, >10mm, Cannot assess>",
-    "evolution_indicators": "<Describe any signs of change, raised areas, or satellite lesions if visible>"
+    "color": ["<list each distinct color present in the lesion>"],
+    "diameter_estimate": "<~3mm|~5mm|~8mm|>10mm|Cannot assess>",
+    "evolution_indicators": "<any raised areas, satellite lesions, peripheral spread, or surface change>"
   },
   "lesion_morphology": "<macule|papule|plaque|nodule|vesicle|bulla|pustule|patch|wheal|cyst|none>",
-  "detected_body_part": "<what body part is actually visible in the image>",
+  "detected_body_part": "<face|arm|hand|back|leg|foot|chest|abdomen|scalp|neck|other>",
   "body_part_matches_selection": <true|false>,
-  "differential_diagnoses": ["<second most likely condition>", "<third most likely condition>"],
-  "clinical_notes": "<2-3 sentences of medically precise clinical narrative including key findings and reasoning>",
+  "differential_diagnoses": ["<second most likely>", "<third most likely>"],
+  "clinical_notes": "<3-4 sentences: describe the lesion in detail, its location in the image, key morphological features, and clinical reasoning for the diagnosis>",
   "urgency": "<Immediate|Within 1 week|Within 1 month|Routine|No action needed>",
   "is_skin_image": <true|false>
 }
 
-Important: If no lesion is visible and skin appears healthy, use condition_code "healthy" with low confidence. If this is not a skin image, set is_skin_image to false.`
+If the skin is genuinely clear and healthy with no findings, use condition_code "healthy" with confidence < 0.3.
+Otherwise identify the actual pathology. Do not default to healthy when disease is present.`
 
-    const url = `${endpoint}openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    {
+      role: 'user',
+      content: [
+        { type: 'text', text: userPrompt },
+        { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${base64Image}`, detail: 'high' } },
+      ],
+    },
+  ]
 
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 12000)
+  // Try each deployment name in order until one works
+  const candidates = getDeploymentCandidates()
+  let lastError = ''
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'api-key': apiKey,
-      },
-      body: JSON.stringify({
-        messages: [
-          { role: 'system', content: systemPrompt },
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: userPrompt },
-              {
-                type: 'image_url',
-                image_url: { url: `data:image/jpeg;base64,${base64Image}`, detail: 'high' },
-              },
-            ],
-          },
-        ],
-        max_tokens: 1000,
-        temperature: 0.1,
-      }),
-      signal: controller.signal,
-    })
+  for (const deployment of candidates) {
+    console.log(`[azure-openai-vision] Trying deployment: ${deployment}`)
+    const result = await callAzureOpenAI(endpoint, apiKey, deployment, apiVersion, messages, 1000, 15000)
 
-    clearTimeout(timeout)
-
-    if (!response.ok) {
-      const errText = await response.text()
-      console.error('[azure-openai-vision] API error:', errText.slice(0, 300))
-      return { ...FALLBACK_RESULT, error: `GPT-4o API error: ${response.status}` }
+    if (!result.ok) {
+      console.warn(`[azure-openai-vision] Deployment ${deployment} failed:`, result.error)
+      lastError = result.error || 'unknown'
+      if (result.error === 'DeploymentNotFound') continue  // try next
+      break  // non-deployment errors — stop trying
     }
 
-    const data = await response.json()
-    const rawContent = data.choices?.[0]?.message?.content || ''
+    const raw = result.data as { choices?: Array<{ message?: { content?: string } }> }
+    const content = raw?.choices?.[0]?.message?.content || ''
 
-    // Parse JSON from response
-    let parsed: GptVisionResult
     try {
-      // Extract JSON even if wrapped in markdown code blocks
-      const jsonMatch = rawContent.match(/\{[\s\S]*\}/)
-      parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(rawContent)
-    } catch {
-      console.error('[azure-openai-vision] Failed to parse GPT-4o JSON:', rawContent.slice(0, 200))
-      return { ...FALLBACK_RESULT, error: 'Failed to parse GPT-4o response' }
-    }
+      const jsonMatch = content.match(/\{[\s\S]*\}/)
+      if (!jsonMatch) throw new Error('No JSON in response')
+      const parsed = JSON.parse(jsonMatch[0]) as GptVisionResult
+      
+      // Sanity check — if GPT says healthy but confidence is high, something is off
+      if (parsed.condition_code === 'healthy' && parsed.confidence > 0.5) {
+        console.log('[azure-openai-vision] High-confidence healthy result — treating as valid')
+      }
 
-    return parsed
-  } catch (err) {
-    if (err instanceof Error && err.name === 'AbortError') {
-      console.warn('[azure-openai-vision] Request timed out')
-      return { ...FALLBACK_RESULT, error: 'GPT-4o request timed out' }
+      console.log(`[azure-openai-vision] Success with deployment: ${deployment}, condition: ${parsed.primary_condition}, confidence: ${parsed.confidence}`)
+      return parsed
+    } catch (parseErr) {
+      console.error('[azure-openai-vision] JSON parse failed:', content.slice(0, 200))
+      break
     }
-    console.error('[azure-openai-vision] Error:', err)
-    return { ...FALLBACK_RESULT, error: err instanceof Error ? err.message : 'Unknown error' }
   }
+
+  console.error('[azure-openai-vision] All deployments failed. Last error:', lastError)
+  return { ...FALLBACK, error: `Azure OpenAI unavailable: ${lastError}` }
 }
 
-/**
- * Lightweight frame validation — checks body part match, skin visibility, lesion presence
- * Used by /api/validate-frame (runs every 2s from live camera)
- */
+
 export interface FrameValidationResult {
   is_skin_visible: boolean
   detected_body_part: string
@@ -186,7 +234,6 @@ export async function validateLiveFrame(
 ): Promise<FrameValidationResult> {
   const endpoint = process.env.AZURE_OPENAI_ENDPOINT
   const apiKey = process.env.AZURE_OPENAI_KEY
-  const deployment = process.env.AZURE_OPENAI_DEPLOYMENT || 'dermasense-gpt4o'
   const apiVersion = process.env.AZURE_OPENAI_API_VERSION || '2024-05-01-preview'
   const enabled = process.env.ENABLE_AZURE_OPENAI === 'true'
 
@@ -197,58 +244,48 @@ export async function validateLiveFrame(
     lesion_visible: false,
     image_quality: 'good',
     ready_to_capture: false,
-    guidance_message: 'AI validation unavailable. Position your skin lesion inside the ring and click Capture.',
+    guidance_message: 'AI validation unavailable. Position your skin and click Capture.',
   }
 
   if (!enabled || !endpoint || !apiKey) return FALLBACK_VALIDATION
 
-  try {
-    const prompt = `You are a medical camera assistant. Analyze this camera frame quickly and return ONLY valid JSON:
+  const prompt = `Camera validation check. Return ONLY valid JSON:
 {
   "is_skin_visible": <true|false>,
   "detected_body_part": "<face|arm|hand|back|leg|foot|chest|abdomen|scalp|neck|object|unclear>",
-  "matches_expected": <true|false based on whether detected body part matches "${expectedBodyPart}">,
-  "lesion_visible": <true|false - is any mole, rash, spot, discoloration, or skin lesion clearly visible?>,
+  "matches_expected": <true|false — does detected part match "${expectedBodyPart}"?>,
+  "lesion_visible": <true|false>,
   "image_quality": "<good|blurry|too_dark|too_bright|too_far|too_close>",
-  "ready_to_capture": <true only if: is_skin_visible=true AND matches_expected=true AND image_quality='good'>,
-  "guidance_message": "<short 1-sentence instruction if not ready, empty string if ready>"
+  "ready_to_capture": <true only if skin visible + correct body part + image quality is good>,
+  "guidance_message": "<short instruction if not ready, empty string if ready>"
 }
-Expected body part: ${expectedBodyPart}. Ready = skin visible + correct body part + good quality.`
+Expected body part: ${expectedBodyPart}.`
 
-    const url = `${endpoint}openai/deployments/${deployment}/chat/completions?api-version=${apiVersion}`
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 4000)
+  const messages = [{
+    role: 'user',
+    content: [
+      { type: 'text', text: prompt },
+      { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${imageBase64}`, detail: 'low' } },
+    ],
+  }]
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'api-key': apiKey },
-      body: JSON.stringify({
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: prompt },
-              { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${imageBase64}`, detail: 'low' } },
-            ],
-          },
-        ],
-        max_tokens: 200,
-        temperature: 0,
-      }),
-      signal: controller.signal,
-    })
+  const candidates = getDeploymentCandidates()
 
-    clearTimeout(timeout)
-    if (!response.ok) return FALLBACK_VALIDATION
+  for (const deployment of candidates) {
+    const result = await callAzureOpenAI(endpoint, apiKey, deployment, apiVersion, messages, 150, 4000)
+    if (!result.ok) {
+      if (result.error === 'DeploymentNotFound') continue
+      break
+    }
 
-    const data = await response.json()
-    const rawContent = data.choices?.[0]?.message?.content || ''
-    const jsonMatch = rawContent.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) return FALLBACK_VALIDATION
-
-    const parsed: FrameValidationResult = JSON.parse(jsonMatch[0])
-    return parsed
-  } catch {
-    return FALLBACK_VALIDATION
+    const raw = result.data as { choices?: Array<{ message?: { content?: string } }> }
+    const content = raw?.choices?.[0]?.message?.content || ''
+    try {
+      const jsonMatch = content.match(/\{[\s\S]*\}/)
+      if (!jsonMatch) break
+      return JSON.parse(jsonMatch[0]) as FrameValidationResult
+    } catch { break }
   }
+
+  return FALLBACK_VALIDATION
 }

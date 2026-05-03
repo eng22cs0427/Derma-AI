@@ -3,14 +3,12 @@ import { redirect } from "next/navigation"
 import { currentUser } from "@clerk/nextjs/server"
 import { DoctorShell } from "@/components/doctor/doctor-shell"
 import { ensureUserProfileExists } from "@/lib/profile-sync"
+import { ProfileCompletionGate } from "@/components/doctor/profile-completion-gate"
 
 export default async function DoctorDashboardLayout({ children }: { children: React.ReactNode }) {
   const user = await currentUser()
 
-  // Must be logged in
-  if (!user) {
-    redirect("/login")
-  }
+  if (!user) redirect("/login")
 
   const primaryEmail =
     user.emailAddresses?.find((e) => e.id === user.primaryEmailAddressId)?.emailAddress ||
@@ -31,16 +29,11 @@ export default async function DoctorDashboardLayout({ children }: { children: Re
     userRole = dbProfile.role || "patient"
   } catch (error) {
     const msg = (error as Error)?.message ?? ""
-    const code = (error as any)?.code ?? ""
+    const code = (error as Record<string, unknown>)?.code ?? ""
     const isTimeout =
-      code === "ETIMEDOUT" ||
-      msg.toLowerCase().includes("etimedout") ||
-      msg.includes("timed out") ||
-      msg.includes("timeout") ||
-      msg.includes("Connection terminated")
+      code === "ETIMEDOUT" || msg.toLowerCase().includes("etimedout") ||
+      msg.includes("timed out") || msg.includes("timeout") || msg.includes("Connection terminated")
     if (isTimeout) {
-      // On DB timeout: allow doctor access if they reached this URL
-      // (they were previously confirmed as a doctor)
       console.warn("[Doctor Layout] DB timeout — allowing through, assuming doctor")
       userRole = "doctor"
     } else {
@@ -48,17 +41,14 @@ export default async function DoctorDashboardLayout({ children }: { children: Re
     }
   }
 
-  // ── Role guard: only doctors may access this dashboard ────────────────────
-  if (userRole === "patient") {
-    redirect("/dashboard")
-  }
-
-  // Admins can also access the doctor dashboard for oversight
-  // (If you want strict doctor-only, change this to: userRole !== 'doctor')
+  if (userRole === "patient") redirect("/dashboard")
 
   return (
-    <DoctorShell isAdmin={userRole === 'admin'}>
-      {children}
+    <DoctorShell isAdmin={userRole === "admin"}>
+      {/* Client-side guard: redirects to /profile if mandatory fields are missing */}
+      <ProfileCompletionGate>
+        {children}
+      </ProfileCompletionGate>
     </DoctorShell>
   )
 }
