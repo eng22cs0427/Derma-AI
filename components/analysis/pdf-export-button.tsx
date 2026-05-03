@@ -22,9 +22,16 @@ const PdfTemplate = ({ details }: { details: any }) => {
     <div id="pdf-export-container" className="bg-white text-slate-900 p-8 font-sans w-[800px] mx-auto border-2 border-slate-100 rounded-xl">
       {/* Header */}
       <div className="flex justify-between items-start border-b-2 border-slate-100 pb-6 mb-6">
-        <div>
-          <h1 className="text-3xl font-black text-emerald-800 tracking-tight">DermaSense AI</h1>
-          <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider mt-1">Medical AI Diagnostic Report</p>
+        <div className="flex gap-4">
+          {details.imageUrl && (
+            <div className="w-20 h-20 shrink-0 rounded-lg overflow-hidden border border-slate-200">
+              <img src={details.imageUrl} alt="Skin Scan" className="w-full h-full object-cover" crossOrigin="anonymous" />
+            </div>
+          )}
+          <div>
+            <h1 className="text-3xl font-black text-emerald-800 tracking-tight">DermaSense AI</h1>
+            <p className="text-sm font-semibold text-slate-500 uppercase tracking-wider mt-1">Medical AI Diagnostic Report</p>
+          </div>
         </div>
         <div className="text-right">
           <p className="text-sm font-bold text-slate-700">{details.Patient_Name || "Patient"}</p>
@@ -33,21 +40,63 @@ const PdfTemplate = ({ details }: { details: any }) => {
         </div>
       </div>
 
+      {/* Doctor Review Section (If closed ticket) */}
+      {details.doctorReviewed && (
+        <div className="mb-6 p-5 rounded-xl bg-emerald-50 border border-emerald-200">
+          <div className="flex justify-between items-start mb-3 border-b border-emerald-100 pb-2">
+            <div>
+              <h3 className="text-[10px] font-bold uppercase tracking-wider text-emerald-600">Dermatologist Review</h3>
+              <p className="text-sm font-bold text-emerald-900 mt-0.5">Dr. {details.doctorName}</p>
+            </div>
+            {details.verdict && (
+              <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-white border border-emerald-200 text-emerald-700">
+                Verdict: {details.verdict}
+              </span>
+            )}
+          </div>
+          <div className="mt-2">
+            <p className="text-sm text-emerald-800 italic leading-relaxed">
+              "{details.doctorMessage}"
+            </p>
+          </div>
+          {details.reviewedAt && (
+            <p className="text-[10px] text-emerald-600 mt-3 font-semibold">
+              Reviewed on: {new Date(details.reviewedAt).toLocaleString()}
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Primary Diagnosis */}
       <div className={`p-6 rounded-xl border mb-6 ${riskConf.bg} ${riskConf.border}`}>
         <div className="flex items-start justify-between">
           <div>
             <h2 className="text-xs font-bold uppercase tracking-wider opacity-60 mb-1">Primary Diagnosis</h2>
             <p className={`text-2xl font-black ${riskConf.text}`}>{result.prediction_name || details.Diagnosis_Name}</p>
-            {result.icd10 && (
-              <p className="text-sm font-semibold mt-1 opacity-80">ICD-10 Code: {result.icd10}</p>
+            {(result.prediction || result.icd10) && (
+              <p className="text-sm font-semibold mt-1 opacity-80">
+                {result.prediction ? `Code: ${result.prediction}` : ''}
+                {result.prediction && result.icd10 ? ' · ' : ''}
+                {result.icd10 ? `ICD-10: ${result.icd10}` : ''}
+              </p>
             )}
           </div>
           <div className="text-right">
-            <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-bold border bg-white shadow-sm ${riskConf.text} ${riskConf.border}`}>
-              {riskConf.label} Risk Level
-            </span>
-            <p className="text-lg font-black mt-2">
+            <div className="flex gap-2 justify-end mb-2">
+              {result.urgency && (
+                <span className={`inline-flex items-center px-3 py-1.5 rounded-full text-sm font-bold border bg-white shadow-sm ${
+                  result.urgency.toLowerCase().includes('immediate') || result.urgency.toLowerCase().includes('urgent') 
+                    ? 'text-red-700 border-red-200' 
+                    : 'text-slate-700 border-slate-200'
+                }`}>
+                  {result.urgency}
+                </span>
+              )}
+              <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-bold border bg-white shadow-sm ${riskConf.text} ${riskConf.border}`}>
+                {riskConf.label} Risk Level
+              </span>
+            </div>
+            <p className="text-lg font-black">
               {result.confidence ? (result.confidence * 100).toFixed(1) : parseFloat(details.Confidence || "0").toFixed(1)}% Match
             </p>
           </div>
@@ -84,31 +133,59 @@ const PdfTemplate = ({ details }: { details: any }) => {
         )}
       </div>
 
-      {/* Symptoms & Treatments */}
-      {result.treatments && (
         <div className="grid grid-cols-2 gap-6 mb-6 pdf-page-break">
-          <div>
-            <h3 className="text-sm font-bold text-slate-800 mb-3 border-b pb-2">Common Symptoms</h3>
-            <ul className="space-y-2">
-              {(result.symptoms || []).map((s: string) => (
-                <li key={s} className="text-sm text-slate-600 flex items-start gap-2">
-                  <span className="text-slate-300 mt-0.5">•</span> {s}
-                </li>
-              ))}
-            </ul>
+          <div className="space-y-6">
+            <div>
+              <h3 className="text-sm font-bold text-slate-800 mb-3 border-b pb-2">Common Symptoms</h3>
+              <ul className="space-y-2">
+                {(result.symptoms || []).map((s: string) => (
+                  <li key={s} className="text-sm text-slate-600 flex items-start gap-2">
+                    <span className="text-slate-300 mt-0.5">•</span> {s}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            
+            {(result.precautions || []).length > 0 && (
+              <div>
+                <h3 className="text-sm font-bold text-slate-800 mb-3 border-b pb-2">Precautions</h3>
+                <ul className="space-y-2">
+                  {result.precautions.map((p: string) => (
+                    <li key={p} className="text-sm text-slate-600 flex items-start gap-2">
+                      <span className="text-amber-400 mt-0.5">⚠</span> {p}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
-          <div>
-            <h3 className="text-sm font-bold text-slate-800 mb-3 border-b pb-2">Recommended Management</h3>
-            <ul className="space-y-2">
-              {(result.treatments || []).map((t: string) => (
-                <li key={t} className="text-sm text-slate-600 flex items-start gap-2">
-                  <span className="text-emerald-400 mt-0.5">→</span> {t}
-                </li>
-              ))}
-            </ul>
+
+          <div className="space-y-6">
+            <div>
+              <h3 className="text-sm font-bold text-slate-800 mb-3 border-b pb-2">Recommended Management</h3>
+              <ul className="space-y-2">
+                {(result.treatments || []).map((t: string) => (
+                  <li key={t} className="text-sm text-slate-600 flex items-start gap-2">
+                    <span className="text-emerald-400 mt-0.5">→</span> {t}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            
+            {(details.Recommended_Specialist || (result.recommended_specialists && result.recommended_specialists.length > 0)) && (
+              <div>
+                <h3 className="text-sm font-bold text-slate-800 mb-3 border-b pb-2">Recommended Specialists</h3>
+                <ul className="space-y-2">
+                  {(result.recommended_specialists || [details.Recommended_Specialist]).filter(Boolean).map((s: string) => (
+                    <li key={s} className="text-sm font-semibold text-blue-700 flex items-start gap-2">
+                      <span className="text-blue-400 mt-0.5">⚕</span> {s}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         </div>
-      )}
 
       {/* Clinical Notes */}
       {(result.clinical_notes || details.Assessment) && (
@@ -126,18 +203,24 @@ const PdfTemplate = ({ details }: { details: any }) => {
           <h3 className="text-sm font-bold text-slate-800 mb-3">ABCDE Melanoma Criteria Assessment</h3>
           <div className="grid grid-cols-1 gap-2">
             {[
-              { k: 'A', l: 'Asymmetry', v: result.abcde.asymmetry },
-              { k: 'B', l: 'Border', v: result.abcde.border },
-              { k: 'C', l: 'Color', v: Array.isArray(result.abcde.color) ? result.abcde.color.join(', ') : result.abcde.color },
-              { k: 'D', l: 'Diameter', v: result.abcde.diameter_estimate },
+              { k: 'A', l: 'Asymmetry', v: result.abcde.asymmetry, danger: String(result.abcde.asymmetry || '').toLowerCase().includes('asymmetric') },
+              { k: 'B', l: 'Border', v: result.abcde.border, danger: String(result.abcde.border || '').toLowerCase().includes('irregular') },
+              { k: 'C', l: 'Color', v: Array.isArray(result.abcde.color) ? result.abcde.color.join(', ') : result.abcde.color, danger: Array.isArray(result.abcde.color) && result.abcde.color.length > 2 },
+              { k: 'D', l: 'Diameter', v: result.abcde.diameter_estimate, danger: String(result.abcde.diameter_estimate || '').includes('>6') || String(result.abcde.diameter_estimate || '').includes('>10') },
+              { k: 'E', l: 'Evolution', v: result.abcde.evolution || result.abcde.evolution_indicators, danger: false },
             ].map(c => (
-              <div key={c.k} className="flex items-center gap-3 p-3 bg-slate-50 border border-slate-100 rounded-lg">
-                <div className="w-8 h-8 shrink-0 flex items-center justify-center bg-slate-200 text-slate-700 font-black rounded-md">{c.k}</div>
+              c.v && (
+                <div key={c.k} className={`flex items-center gap-3 p-3 border rounded-lg ${c.danger ? 'bg-red-50 border-red-200' : 'bg-slate-50 border-slate-100'}`}>
+                <div className={`w-8 h-8 shrink-0 flex items-center justify-center font-black rounded-md ${c.danger ? 'bg-red-200 text-red-700' : 'bg-slate-200 text-slate-700'}`}>{c.k}</div>
                 <div>
-                  <p className="text-[10px] uppercase tracking-wider font-bold text-slate-400">{c.l}</p>
-                  <p className="text-sm font-semibold text-slate-800">{String(c.v) || 'N/A'}</p>
+                  <p className={`text-[10px] uppercase tracking-wider font-bold ${c.danger ? 'text-red-400' : 'text-slate-400'}`}>{c.l}</p>
+                  <p className={`text-sm font-semibold ${c.danger ? 'text-red-900' : 'text-slate-800'}`}>{String(c.v) || 'N/A'}</p>
+                </div>
+                <div className="ml-auto">
+                  <span className={`text-xs font-bold ${c.danger ? 'text-red-600' : 'text-slate-400'}`}>{c.danger ? 'Warning' : 'Pass'}</span>
                 </div>
               </div>
+              )
             ))}
           </div>
         </div>

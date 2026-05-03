@@ -13,7 +13,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { DUMMY_STATS, DUMMY_ANALYSES } from "@/lib/doctor-dummy-data"
+import { useUser } from "@clerk/nextjs"
 
 type Analysis = {
   id: string
@@ -64,8 +64,9 @@ function InitialsAvatar({ name }: { name?: string }) {
 }
 
 export default function DoctorOverviewPage() {
+  const { user } = useUser()
   const [analyses, setAnalyses] = useState<Analysis[]>([])
-  const [stats, setStats] = useState(DUMMY_STATS)
+  const [stats, setStats] = useState({ totalPatients: 0, totalAnalyses: 0, highRiskCases: 0, recentAnalyses: 0 })
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
@@ -73,18 +74,16 @@ export default function DoctorOverviewPage() {
       try {
         const [sRes, aRes] = await Promise.all([fetch("/api/doctor/stats"), fetch("/api/doctor/analyses")])
         const [sData, aData] = await Promise.all([sRes.json(), aRes.json()])
-        // Use live analysis + dummy fallback
+        // Use live analysis only
         const liveAnalyses = Array.isArray(aData) ? aData : []
-        setAnalyses([...liveAnalyses, ...DUMMY_ANALYSES].slice(0, 8))
+        setAnalyses(liveAnalyses.slice(0, 8))
         
-        if (sData?.totalPatients !== undefined && sData.totalPatients > 0) {
+        if (sData?.totalPatients !== undefined) {
           setStats(sData)
-        } else {
-          setStats(DUMMY_STATS)
         }
       } catch {
-        setAnalyses(DUMMY_ANALYSES.slice(0, 8))
-        setStats(DUMMY_STATS)
+        // Fallback to empty state on error
+        setAnalyses([])
       } finally {
         setIsLoading(false)
       }
@@ -110,7 +109,7 @@ export default function DoctorOverviewPage() {
               </span>
               <span className="text-sm text-white/70 font-medium">Live Patient Data</span>
             </div>
-            <h1 className="text-3xl sm:text-4xl font-black tracking-tight">{greeting}, Doctor 👨‍⚕️</h1>
+            <h1 className="text-3xl sm:text-4xl font-black tracking-tight">{greeting}, Dr. {user?.fullName || "Doctor"}</h1>
             <p className="text-white/75 mt-2 max-w-xl text-sm sm:text-base">
               Your clinical dashboard — real-time AI skin analysis results and patient records from DermaAI.
             </p>

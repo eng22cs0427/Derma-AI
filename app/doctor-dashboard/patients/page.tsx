@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
-import { DUMMY_PATIENTS, DUMMY_ANALYSES } from "@/lib/doctor-dummy-data"
+import { PdfExportButton } from "@/components/analysis/pdf-export-button"
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type Patient = {
@@ -108,13 +108,6 @@ function PatientAnalysesModal({
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!patient.is_real) {
-      // Use dummy data
-      const dummyAnalyses = DUMMY_ANALYSES.filter(a => a.patient_id === patient.id)
-      setAnalyses(dummyAnalyses as unknown as Analysis[])
-      setLoading(false)
-      return
-    }
     // Fetch from DB
     fetch(`/api/doctor/analyses?patientId=${patient.id}`)
       .then(r => r.json())
@@ -210,6 +203,11 @@ function PatientAnalysesModal({
                       <span className="font-semibold">Recommendation: </span>{recommendation}
                     </p>
                   )}
+                  
+                  {/* Download PDF for Doctor */}
+                  <div className="mt-3 flex justify-end">
+                    <PdfExportButton details={d} variant="outline" className="h-8 text-xs px-3" />
+                  </div>
                 </div>
               )
             })
@@ -221,20 +219,6 @@ function PatientAnalysesModal({
 }
 
 // ── Main Page ──────────────────────────────────────────────────────────────────
-function enrichDummyPatients(patients: typeof DUMMY_PATIENTS): Patient[] {
-  return patients.map(p => {
-    const analyses = DUMMY_ANALYSES.filter(a => a.patient_id === p.id)
-    const latest = analyses.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]
-    return {
-      ...p,
-      is_real: false,
-      latest_analysis: latest?.data ?? undefined,
-      latest_analysis_date: latest?.date ?? undefined,
-      latest_risk_level: (latest?.details?.Risk_Level as string) ?? undefined,
-    }
-  })
-}
-
 export default function DoctorPatientsPage() {
   const [patients, setPatients] = useState<Patient[]>([])
   const [search, setSearch] = useState("")
@@ -252,14 +236,9 @@ export default function DoctorPatientsPage() {
         ? dbData.map(p => ({ ...p, is_real: true }))
         : []
 
-      // Merge: real patients first, then dummy (deduped by email)
-      const realEmails = new Set(realPatients.map(p => p.email?.toLowerCase()))
-      const dummyPatients = enrichDummyPatients(DUMMY_PATIENTS)
-        .filter(p => !realEmails.has(p.email?.toLowerCase()))
-
-      setPatients([...realPatients, ...dummyPatients])
+      setPatients(realPatients)
     } catch {
-      setPatients(enrichDummyPatients(DUMMY_PATIENTS))
+      setPatients([])
     } finally {
       setIsLoading(false)
       setIsRefreshing(false)
@@ -314,10 +293,9 @@ export default function DoctorPatientsPage() {
       </div>
 
       {/* Stats Banner */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 gap-3">
         {[
           { label: "Total Patients", value: patients.length, icon: <Users className="h-4 w-4 text-blue-500" />, bg: "bg-blue-50 dark:bg-blue-900/20" },
-          { label: "Live from DB", value: realCount, icon: <Activity className="h-4 w-4 text-emerald-500" />, bg: "bg-emerald-50 dark:bg-emerald-900/20" },
           { label: "High Risk Cases", value: highRiskCount, icon: <AlertTriangle className="h-4 w-4 text-red-500" />, bg: "bg-red-50 dark:bg-red-900/20" },
         ].map(s => (
           <div key={s.label} className={cn("flex flex-col items-center py-3 px-2 rounded-xl border border-white/60 dark:border-slate-700", s.bg)}>
@@ -386,11 +364,6 @@ export default function DoctorPatientsPage() {
                         <span className="font-bold text-slate-900 dark:text-white text-sm sm:text-base">{patient.full_name || "Unknown"}</span>
                         {patient.gender && <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-medium">{patient.gender}</span>}
                         {age !== null && <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-medium">{age} yrs</span>}
-                        {patient.is_real ? (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-bold">LIVE</span>
-                        ) : (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-500 font-bold">DEMO</span>
-                        )}
                       </div>
                       <p className="text-xs text-slate-500 mt-0.5 truncate">{patient.email}</p>
                       {patient.latest_analysis && <p className="text-xs text-slate-600 dark:text-slate-400 mt-1 truncate font-medium">Latest: {patient.latest_analysis}</p>}

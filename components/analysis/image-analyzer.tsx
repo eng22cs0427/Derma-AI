@@ -18,8 +18,10 @@ import { Progress } from "@/components/ui/progress"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useMedicalHistory } from "@/contexts/MedicalHistoryContext"
+import { useProfile } from "@/contexts/ProfileContext"
 import { BodyPartSelector } from "@/components/analysis/body-part-selector"
 import { CameraCapture } from "@/components/analysis/camera-capture"
+import { PdfExportButton } from "@/components/analysis/pdf-export-button"
 import { DISEASE_DB, BODY_PARTS } from "@/lib/skin-disease-db"
 
 const COLORS = ['#4ade80', '#facc15', '#f97316', '#ef4444', '#60a5fa', '#a78bfa', '#f472b6']
@@ -123,6 +125,7 @@ export function ImageAnalyzer() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const analysisRef = useRef<HTMLDivElement>(null)
   const { refreshHistory } = useMedicalHistory()
+  const { profile } = useProfile()
 
   // ── Pending-ticket gate ──────────────────────────────────────────────────
   // If the patient already has an open ticket (awaiting doctor review),
@@ -323,30 +326,6 @@ export function ImageAnalyzer() {
     if (!result) return
     const text = `Skin analysis result for ${result.prediction_name}. Confidence ${((result.confidence as number) * 100).toFixed(1)} percent. Severity ${result.severity}. Urgency: ${result.urgency}. ${result.clinical_notes}`
     window.speechSynthesis.speak(new SpeechSynthesisUtterance(text as string))
-  }
-
-  const exportToPDF = async () => {
-    if (!analysisRef.current) return
-    const { default: html2pdf } = await import('html2pdf.js')
-    // Clone and sanitise for PDF — remove motion wrappers' inline transforms
-    const element = analysisRef.current
-    html2pdf()
-      .set({
-        margin: [0.4, 0.4, 0.6, 0.4],
-        filename: `DermaSense_Analysis_${result?.prediction_name?.replace(/\s+/g, '_') || 'result'}.pdf`,
-        html2canvas: {
-          scale: 1.8,
-          useCORS: true,
-          allowTaint: true,
-          scrollX: 0,
-          scrollY: 0,
-          windowWidth: 900,
-        },
-        jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' },
-        pagebreak: { mode: ['avoid-all', 'css', 'legacy'], before: '.pdf-page-break' },
-      })
-      .from(element)
-      .save()
   }
 
   // ─── RENDER ────────────────────────────────────────────────────────────────
@@ -799,9 +778,20 @@ export function ImageAnalyzer() {
                         <Button variant="outline" size="sm" onClick={speakSummary} id="speak-btn">
                           <Volume2 className="h-4 w-4 sm:mr-1" /><span className="hidden sm:inline">Speak</span>
                         </Button>
-                        <Button variant="outline" size="sm" onClick={exportToPDF} id="export-pdf-btn">
-                          <Download className="h-4 w-4 sm:mr-1" /><span className="hidden sm:inline">Export PDF</span>
-                        </Button>
+                        <PdfExportButton 
+                          details={{
+                            fullReport: result,
+                            Patient_Name: profile?.fullName,
+                            Patient_Age: profile?.dateOfBirth ? new Date().getFullYear() - new Date(profile.dateOfBirth).getFullYear() : "N/A",
+                            analysis_time: new Date().toLocaleString(),
+                            imageUrl: previewUrl,
+                            Body_Part: bodyPart,
+                            Fitzpatrick: result.fitzpatrick_type,
+                          }}
+                          variant="outline"
+                          className="h-9 px-3"
+                          label="Export PDF"
+                        />
                       </div>
                     </div>
                   </div>

@@ -14,7 +14,6 @@ import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import { PdfExportButton } from "@/components/analysis/pdf-export-button"
 import { toast } from "sonner"
-import { DUMMY_ANALYSES } from "@/lib/doctor-dummy-data"
 
 type Analysis = {
   id: string
@@ -109,16 +108,10 @@ export default function DoctorAnalysesPage() {
       }
       setReviewedIds(reviewed)
 
-      const realKeys = new Set(realAnalyses.map(a => `${a.patient_email?.toLowerCase()}_${new Date(a.date).toDateString()}`))
-      const dummyAnalyses = (DUMMY_ANALYSES as unknown as Analysis[]).filter(a => {
-        const key = `${a.patient_email?.toLowerCase()}_${new Date(a.date).toDateString()}`
-        return !realKeys.has(key)
-      }).map(a => ({ ...a, is_real: false }))
-
-      const merged = [...realAnalyses, ...dummyAnalyses].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      const merged = [...realAnalyses].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
       setAnalyses(merged)
     } catch {
-      setAnalyses((DUMMY_ANALYSES as unknown as Analysis[]).map(a => ({ ...a, is_real: false })))
+      setAnalyses([])
     } finally {
       setIsLoading(false)
       setIsRefreshing(false)
@@ -161,12 +154,11 @@ export default function DoctorAnalysesPage() {
     return matchesSearch && matchesRisk && matchesStatus
   })
 
-  const realCount = analyses.filter(a => a.is_real).length
   const highRiskCount = analyses.filter(a => {
     const d = typeof a.details === "string" ? JSON.parse(a.details) : a.details
     return (d?.Risk_Level as string || "").includes("High")
   }).length
-  const pendingCount = analyses.filter(a => a.is_real && !reviewedIds.has(a.id)).length
+  const pendingCount = analyses.filter(a => !reviewedIds.has(a.id)).length
 
   return (
     <div className="p-4 sm:p-6 space-y-5">
@@ -189,10 +181,9 @@ export default function DoctorAnalysesPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {[
           { label: "Total", value: analyses.length, icon: <Microscope className="h-4 w-4 text-blue-500" />, bg: "bg-blue-50 dark:bg-blue-900/20" },
-          { label: "Live Patients", value: realCount, icon: <Activity className="h-4 w-4 text-emerald-500" />, bg: "bg-emerald-50 dark:bg-emerald-900/20" },
           { label: "High Risk", value: highRiskCount, icon: <AlertTriangle className="h-4 w-4 text-red-500" />, bg: "bg-red-50 dark:bg-red-900/20" },
           { label: "Awaiting Review", value: pendingCount, icon: <MessageSquare className="h-4 w-4 text-amber-500" />, bg: "bg-amber-50 dark:bg-amber-900/20" },
         ].map(s => (
@@ -258,9 +249,8 @@ export default function DoctorAnalysesPage() {
                         <span className="font-bold text-slate-800 dark:text-white text-sm">{analysis.patient_name || "Unknown"}</span>
                         {analysis.gender && <span className="text-xs text-slate-400">{analysis.gender}</span>}
                         {age !== null && <span className="text-xs text-slate-400">{age} yrs</span>}
-                        {analysis.is_real ? <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-bold">LIVE</span> : <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-500 font-bold">DEMO</span>}
                         {alreadyReviewed && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-bold flex items-center gap-0.5"><BadgeCheck className="h-3 w-3" />Reviewed</span>}
-                        {!alreadyReviewed && analysis.is_real && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-bold animate-pulse">Awaiting Review</span>}
+                        {!alreadyReviewed && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-bold animate-pulse">Awaiting Review</span>}
                       </div>
                       <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">{diagnosis}</p>
                       {assessment && <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{assessment}</p>}
