@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Image from "next/image";
 import {
   Calendar,
@@ -40,7 +40,7 @@ import { useProfile } from "@/contexts/ProfileContext";
 
 // Add the Doctor interface
 interface Doctor {
-  id: number;
+  id: number | string;
   name: string;
   specialty: string;
   subspecialty: string;
@@ -544,11 +544,46 @@ export default function AppointmentsPage() {
   const patientEmail = profile?.email || ""
   const patientPhone = profile?.contactNumber || ""
 
-  // Generate available dates and time slots
   const availableDates = generateDates()
 
+  // Fetch live doctors from MongoDB
+  const [liveDoctors, setLiveDoctors] = useState<Doctor[]>([])
+  const [isLoadingDoctors, setIsLoadingDoctors] = useState(true)
+
+  useEffect(() => {
+    fetch('/api/doctors')
+      .then(res => res.ok ? res.json() : [])
+      .then((data: any[]) => {
+        const mapped: Doctor[] = data.map((d, i) => ({
+          id: d.id || `live-${i}`,
+          name: d.fullName ? (d.fullName.startsWith('Dr.') ? d.fullName : `Dr. ${d.fullName}`) : "Dr. Specialist",
+          specialty: d.specialty || "Dermatology",
+          subspecialty: d.subspecialty || "General",
+          hospital: d.hospitalName || "Partner Clinic",
+          rating: 5.0,
+          reviews: Math.floor(Math.random() * 50) + 10,
+          experience: d.experience || 5,
+          image: d.imageUrl || "/placeholder.svg?height=150&width=150",
+          availableToday: true, // We can refine this later
+          nextAvailable: "Check slots",
+          consultationFee: d.consultationFee || 1000,
+          location: d.location || "Online",
+          about: d.about || "Verified dermatologist available for consultation.",
+          education: d.education ? [d.education] : ["MBBS", "MD (Dermatology)"],
+          languages: ["English", "Hindi"],
+          telemedicine: true,
+        }))
+        setLiveDoctors(mapped)
+      })
+      .catch(console.error)
+      .finally(() => setIsLoadingDoctors(false))
+  }, [])
+
+  // Combine live doctors + sample doctors (live first)
+  const allDoctors = [...liveDoctors, ...doctors]
+
   // Filter doctors based on search and filters
-  const filteredDoctors = doctors.filter((doctor) => {
+  const filteredDoctors = allDoctors.filter((doctor) => {
     // Search query filter
     const matchesSearch =
       doctor.name.toLowerCase().includes(searchQuery.toLowerCase()) ||

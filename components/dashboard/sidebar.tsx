@@ -37,7 +37,6 @@ const menuItems = [
     title: "My Skin Tickets",
     icon: Ticket,
     href: "/dashboard/skin-tickets",
-    badge: "NEW",
   },
   {
     title: "Dermatologist Appointments",
@@ -64,7 +63,9 @@ export function DashboardSidebar({ isAdmin = false }: { isAdmin?: boolean }) {
   const SidebarContent = () => (
     <nav className="flex-1 space-y-1 p-4">
       {menuItems.map((item) => {
-        const isActive = pathname === item.href || pathname.startsWith(item.href + "/")
+        const isActive = item.href === "/dashboard" 
+          ? pathname === "/dashboard" 
+          : (pathname === item.href || pathname.startsWith(item.href + "/"))
         return (
           <Link key={item.href} href={item.href}>
             <div
@@ -75,9 +76,7 @@ export function DashboardSidebar({ isAdmin = false }: { isAdmin?: boolean }) {
             >
               <item.icon className="h-4 w-4 shrink-0" />
               <span className="flex-1">{item.title}</span>
-              {"badge" in item && item.badge && !isActive && (
-                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-blue-600 text-white font-bold">{item.badge}</span>
-              )}
+
               {isActive && <ChevronRight className="ml-auto h-4 w-4" />}
             </div>
           </Link>

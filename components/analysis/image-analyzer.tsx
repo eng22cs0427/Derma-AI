@@ -139,8 +139,9 @@ export function ImageAnalyzer() {
         id: string; diagnosis: string; riskLevel: string
         analysisDate: string; ticketStatus: string; confidence: string
       }>) => {
-        const open = tickets.find(t => t.ticketStatus === 'Open')
-        setPendingTicket(open ?? null)
+        const latest = tickets[0]
+        const open = latest?.ticketStatus === 'Open' ? latest : null
+        setPendingTicket(open)
       })
       .catch(() => setPendingTicket(null)) // on error, don't block
   }, [])
