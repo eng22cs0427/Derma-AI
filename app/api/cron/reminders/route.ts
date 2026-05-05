@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getCollection, ObjectId } from '@/lib/mongodb'
 import { sendAppointmentReminderEmail } from '@/lib/email'
+import type { IAppointment, IProfile } from '@/database/mongodb-schema'
 
 export async function GET() {
   try {
@@ -10,8 +11,8 @@ export async function GET() {
     //   return new Response('Unauthorized', { status: 401 })
     // }
 
-    const apptCol = await getCollection('appointments')
-    const profilesCol = await getCollection('profiles')
+    const apptCol = await getCollection<IAppointment>('appointments')
+    const profilesCol = await getCollection<IProfile>('profiles')
     const pNotifCol = await getCollection('patient_notifications')
     const dNotifCol = await getCollection('doctor_notifications')
 
@@ -56,7 +57,7 @@ export async function GET() {
       if (diffMs > 0 && diffMs <= 24 * 60 * 60 * 1000) {
         // Send Reminder Email
         const patientProfile = await profilesCol.findOne({ _id: appt.patientId })
-        const doctorProfile = await profilesCol.findOne({ clerkUserId: appt.doctorClerkId })
+        const doctorProfile = await profilesCol.findOne({ clerkUserId: appt.doctorClerkId as string })
 
         if (patientProfile && patientProfile.email) {
           await sendAppointmentReminderEmail({
@@ -65,20 +66,20 @@ export async function GET() {
             doctorName: appt.doctorName,
             date: appt.appointmentDate,
             time: appt.appointmentTime,
-            meetingLink: appt.meetingLink,
-            type: appt.type
+            meetingLink: appt.meetingLink || undefined,
+            type: appt.type || 'Video Call'
           })
         }
 
         if (doctorProfile && doctorProfile.email) {
           await sendAppointmentReminderEmail({
             to: doctorProfile.email,
-            patientName: patientProfile ? patientProfile.fullName : 'Patient',
+            patientName: (patientProfile?.fullName) || 'Patient',
             doctorName: appt.doctorName,
             date: appt.appointmentDate,
             time: appt.appointmentTime,
-            meetingLink: appt.meetingLink,
-            type: appt.type
+            meetingLink: appt.meetingLink || undefined,
+            type: appt.type || 'Video Call'
           })
         }
 

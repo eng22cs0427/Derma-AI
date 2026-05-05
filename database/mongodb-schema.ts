@@ -62,6 +62,17 @@ export interface IMedicalHistory {
   updatedAt: Date
 }
 
+export interface IAppointmentReview {
+  rating: number
+  feedback?: string
+  date: Date
+}
+
+export interface IAttachedReport {
+  name: string
+  url: string
+}
+
 export interface IAppointment {
   _id?: ObjectId
   patientId: ObjectId
@@ -85,6 +96,8 @@ export interface IAppointment {
   type?: string
   confirmedAt?: Date
   emailSent?: boolean
+  review?: IAppointmentReview
+  attachedReports?: IAttachedReport[]
   createdAt: Date
   updatedAt: Date
 }
@@ -174,7 +187,7 @@ export interface IDoctorNotification {
   patientId?: ObjectId
   title: string
   message: string
-  type: 'Appointment' | 'Analysis' | 'General'
+  type: 'Appointment' | 'Analysis' | 'General' | 'Review'
   link?: string
   read: boolean
   createdAt: Date

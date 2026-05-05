@@ -83,16 +83,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         { $set: { review: { rating, feedback, date: now } } }
       )
 
-      const doctorProfile = await profileCol.findOne({ clerkUserId: appt.doctorClerkId, role: 'doctor' })
+      const doctorProfile = await profileCol.findOne({ clerkUserId: appt.doctorClerkId as string, role: 'doctor' })
       if (doctorProfile) {
-         const currentRating = doctorProfile.rating || 0
-         const currentPatients = doctorProfile.totalPatients || 0
+         const dp = doctorProfile as any
+         const currentRating = dp.rating || 0
+         const currentPatients = dp.totalPatients || 0
          const newPatients = currentPatients + 1
          const newRating = ((currentRating * currentPatients) + rating) / newPatients
          
          await profileCol.updateOne(
-           { clerkUserId: appt.doctorClerkId },
-           { $set: { rating: newRating, totalPatients: newPatients } }
+           { clerkUserId: appt.doctorClerkId as string },
+           { $set: { rating: newRating, totalPatients: newPatients } as any }
          )
          
          const doctorNotifCol = await getCollection<IDoctorNotification>('doctor_notifications')

@@ -568,7 +568,7 @@ export default function DoctorProfilePage() {
                   {(() => {
                     const c = Country.getAllCountries().find(c => c.name === form.country)
                     const s = c ? State.getStatesOfCountry(c.isoCode).find(s => s.name === form.state) : null
-                    return s ? City.getCitiesOfState(c.isoCode, s.isoCode).map(city => <SelectItem key={city.name} value={city.name}>{city.name}</SelectItem>) : null
+                    return (c && s) ? City.getCitiesOfState(c.isoCode, s.isoCode).map(city => <SelectItem key={city.name} value={city.name}>{city.name}</SelectItem>) : null
                   })()}
                 </SelectContent>
               </Select>

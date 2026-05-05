@@ -346,8 +346,8 @@ export default function ProfilePage() {
                   </DropdownMenuItem>
                   {profile.avatarUrl && (
                     <DropdownMenuItem onClick={() => {
-                        setFormData(prev => ({ ...prev, avatarUrl: null }))
-                        setProfile(prev => prev ? ({ ...prev, avatarUrl: null }) : null)
+                        setFormData(prev => ({ ...prev, avatarUrl: undefined }))
+                        setProfile(prev => prev ? ({ ...prev, avatarUrl: undefined }) : null)
                         toast.success("Profile image removed! Please save changes.")
                       }} 
                       className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-950/50"
@@ -483,7 +483,7 @@ export default function ProfilePage() {
                     {(() => {
                       const c = Country.getAllCountries().find(c => c.name === formData.country)
                       const s = c ? State.getStatesOfCountry(c.isoCode).find(s => s.name === formData.state) : null
-                      return s ? City.getCitiesOfState(c.isoCode, s.isoCode).map(city => <SelectItem key={city.name} value={city.name}>{city.name}</SelectItem>) : null
+                      return (c && s) ? City.getCitiesOfState(c.isoCode, s.isoCode).map(city => <SelectItem key={city.name} value={city.name}>{city.name}</SelectItem>) : null
                     })()}
                   </SelectContent>
                 </Select>
