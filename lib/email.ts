@@ -322,3 +322,31 @@ export async function sendDoctorConfirmedAppointmentEmail({
   })
 }
 
+export async function sendAppointmentReminderEmail({
+  to, patientName, doctorName, date, time, meetingLink, type
+}: {
+  to: string; patientName: string; doctorName: string; date: string; time: string; meetingLink?: string; type: string
+}) {
+  const isVideo = type === 'Video Call' && meetingLink
+  await sendEmail({
+    to,
+    subject: `⏳ Reminder: Appointment with Dr. ${doctorName} Tomorrow`,
+    htmlBody: `
+      <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:24px;background:#f9fafb;border-radius:12px;">
+        <h1 style="color:#1d4ed8;text-align:center;">DermaSense AI</h1>
+        <div style="background:white;border-radius:8px;padding:24px;">
+          <h2 style="color:#111827;margin-top:0;">Hello, ${patientName}</h2>
+          <p>This is a reminder for your upcoming appointment.</p>
+          <table style="width:100%;border-collapse:collapse;margin:16px 0;">
+            <tr><td style="padding:8px 0;color:#6b7280;width:140px;">Doctor</td><td style="color:#111827;font-weight:bold;">Dr. ${doctorName}</td></tr>
+            <tr><td style="padding:8px 0;color:#6b7280;">Date</td><td style="color:#111827;">${date}</td></tr>
+            <tr><td style="padding:8px 0;color:#6b7280;">Time</td><td style="color:#111827;">${time}</td></tr>
+            <tr><td style="padding:8px 0;color:#6b7280;">Type</td><td style="color:#111827;">${type}</td></tr>
+          </table>
+          ${isVideo ? `<div style="text-align:center;margin-top:24px;"><a href="${meetingLink}" style="background:#1d4ed8;color:white;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;">Join Video Call</a></div>` : ''}
+        </div>
+      </div>`,
+    textBody: `Reminder: Appointment with Dr. ${doctorName} on ${date} at ${time}.`,
+  })
+}
+

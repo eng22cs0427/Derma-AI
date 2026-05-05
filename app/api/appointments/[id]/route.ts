@@ -46,7 +46,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const body = await req.json()
-    const { action, notes } = body // action: 'confirm' | 'reject' | 'cancel' | 'complete'
+    const { action, notes, rating, feedback, reportName, reportUrl } = body // action: 'confirm' | 'reject' | 'cancel' | 'complete' | 'review' | 'attach_report'
     const { id } = await params
 
     const apptCol = await getCollection<IAppointment>('appointments')
@@ -67,6 +67,58 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       if (hoursDifference < 24) {
         return NextResponse.json({ error: 'Appointments can only be cancelled at least 24 hours in advance.' }, { status: 400 })
       }
+    }
+
+    // Patient leaves review
+    if (action === 'review' && isPatient) {
+      if (appt.status !== 'Completed') {
+        return NextResponse.json({ error: 'Only completed appointments can be reviewed' }, { status: 400 })
+      }
+      if (appt.review) {
+        return NextResponse.json({ error: 'You have already reviewed this appointment' }, { status: 400 })
+      }
+      
+      await apptCol.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { review: { rating, feedback, date: now } } }
+      )
+
+      const doctorProfile = await profileCol.findOne({ clerkUserId: appt.doctorClerkId, role: 'doctor' })
+      if (doctorProfile) {
+         const currentRating = doctorProfile.rating || 0
+         const currentPatients = doctorProfile.totalPatients || 0
+         const newPatients = currentPatients + 1
+         const newRating = ((currentRating * currentPatients) + rating) / newPatients
+         
+         await profileCol.updateOne(
+           { clerkUserId: appt.doctorClerkId },
+           { $set: { rating: newRating, totalPatients: newPatients } }
+         )
+         
+         const doctorNotifCol = await getCollection<IDoctorNotification>('doctor_notifications')
+         await doctorNotifCol.insertOne({
+            doctorId: doctorProfile._id!,
+            patientId: appt.patientId,
+            title: 'New Patient Review',
+            message: `A patient left a ${rating}-star review for their consultation.`,
+            type: 'Review',
+            read: false,
+            createdAt: now
+         })
+      }
+      return NextResponse.json({ success: true, status: appt.status })
+    }
+
+    // Patient attaches report
+    if (action === 'attach_report' && isPatient) {
+      if (!reportName || !reportUrl) {
+        return NextResponse.json({ error: 'Missing report details' }, { status: 400 })
+      }
+      await apptCol.updateOne(
+        { _id: new ObjectId(id) },
+        { $push: { attachedReports: { name: reportName, url: reportUrl } } as any }
+      )
+      return NextResponse.json({ success: true, status: appt.status })
     }
 
     let newStatus: IAppointment['status'] = appt.status

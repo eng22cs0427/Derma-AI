@@ -1,14 +1,19 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
+import { Country, State, City } from "country-state-city"
 import { useRouter } from "next/navigation"
+import Cropper from "react-easy-crop"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Slider } from "@/components/ui/slider"
 import { toast } from "sonner"
 import {
   Loader2, Save, Stethoscope, Building2, User, Phone,
   MapPin, Clock, BadgeCheck, DollarSign, Calendar, Link2,
-  FileText, Upload, Eye, ShieldCheck, AlertCircle, CheckCircle2,
+  FileText, Upload, Eye, ShieldCheck, AlertCircle, CheckCircle2, Trash2
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -46,6 +51,10 @@ interface DoctorProfile {
 // Fields the doctor must fill before accessing the dashboard
 const MANDATORY: { key: keyof DoctorProfile; label: string }[] = [
   { key: "contactNumber", label: "Mobile Number" },
+  { key: "gender", label: "Gender" },
+  { key: "country", label: "Country" },
+  { key: "state", label: "State" },
+  { key: "city", label: "City" },
   { key: "specialty", label: "Specialty" },
   { key: "qualifications", label: "Qualifications" },
   { key: "experienceYears", label: "Years of Experience" },
@@ -68,6 +77,65 @@ function isValidUrl(s: string) {
   catch { return false }
 }
 
+const createImage = (url: string) =>
+  new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image()
+    image.addEventListener('load', () => resolve(image))
+    image.addEventListener('error', (error) => reject(error))
+    image.setAttribute('crossOrigin', 'anonymous')
+    image.src = url
+  })
+
+async function getCroppedImg(
+  imageSrc: string,
+  pixelCrop: { x: number, y: number, width: number, height: number }
+) {
+  const image = await createImage(imageSrc)
+  const canvas = document.createElement('canvas')
+  const ctx = canvas.getContext('2d')
+
+  if (!ctx) return null
+
+  canvas.width = pixelCrop.width
+  canvas.height = pixelCrop.height
+
+  ctx.drawImage(
+    image,
+    pixelCrop.x,
+    pixelCrop.y,
+    pixelCrop.width,
+    pixelCrop.height,
+    0,
+    0,
+    pixelCrop.width,
+    pixelCrop.height
+  )
+
+  return new Promise<string | null>((resolve) => {
+    canvas.toBlob((blob) => {
+      if (!blob) return resolve(null)
+      const reader = new FileReader()
+      reader.onloadend = () => resolve(reader.result as string)
+      reader.readAsDataURL(blob)
+    }, 'image/jpeg')
+  })
+}
+
+function Field({ name, label, required, children, hint, errors }: {
+  name: string; label: string; required?: boolean; children: React.ReactNode; hint?: string; errors: Record<string, string>
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-sm font-medium flex items-center gap-1">
+        {label} {required && <span className="text-red-500">*</span>}
+      </Label>
+      {children}
+      {errors[name] && <p className="text-xs text-red-500 flex items-center gap-1"><AlertCircle className="h-3 w-3" />{errors[name]}</p>}
+      {!errors[name] && hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+    </div>
+  )
+}
+
 export default function DoctorProfilePage() {
   const router = useRouter()
   const [profile, setProfile] = useState<DoctorProfile | null>(null)
@@ -76,17 +144,38 @@ export default function DoctorProfilePage() {
   const [saving, setSaving] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const fileRef = useRef<HTMLInputElement>(null)
+  const avatarFileRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
+  const [stats, setStats] = useState({ totalPatients: 0, rating: 4.8 })
+
+  // Cropper State
+  const [cropModalOpen, setCropModalOpen] = useState(false)
+  const [imageSrc, setImageSrc] = useState<string | null>(null)
+  const [crop, setCrop] = useState({ x: 0, y: 0 })
+  const [zoom, setZoom] = useState(1)
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null)
 
   useEffect(() => { fetchProfile() }, [])
 
   async function fetchProfile() {
     setLoading(true)
     try {
-      const res = await fetch("/api/doctor/profile")
+      const [res, statsRes] = await Promise.all([
+        fetch("/api/doctor/profile"),
+        fetch("/api/doctor/stats")
+      ])
+      
       if (res.ok) {
         const data: DoctorProfile = await res.json()
         setProfile(data); setForm(data)
+      }
+      
+      if (statsRes.ok) {
+        const statsData = await statsRes.json()
+        setStats(prev => ({ 
+          ...prev, 
+          totalPatients: statsData.totalPatients || 0 
+        }))
       }
     } catch { toast.error("Failed to load profile") }
     finally { setLoading(false) }
@@ -96,6 +185,10 @@ export default function DoctorProfilePage() {
     const e: Record<string, string> = {}
     if (!form.contactNumber?.trim()) e.contactNumber = "Mobile number is required"
     else if (form.contactNumber.replace(/\D/g,"").length < 10) e.contactNumber = "Enter a valid 10-digit mobile number"
+    if (!form.gender) e.gender = "Select your gender"
+    if (!form.country) e.country = "Country is required"
+    if (!form.state) e.state = "State is required"
+    if (!form.city) e.city = "City is required"
     if (!form.specialty) e.specialty = "Select your specialty"
     if (!form.qualifications?.trim()) e.qualifications = "Qualifications are required (e.g. MBBS, MD)"
     if (!form.experienceYears || form.experienceYears < 0) e.experienceYears = "Enter years of experience"
@@ -132,7 +225,7 @@ export default function DoctorProfilePage() {
         const d = await res.json()
         toast.error(d.error || "Save failed")
       }
-    } catch { toast.error("Network error — please try again") }
+    } catch { toast.error("Network error, please try again") }
     finally { setSaving(false) }
   }
 
@@ -146,51 +239,60 @@ export default function DoctorProfilePage() {
     setForm({ ...form, languages: langs.includes(lang) ? langs.filter(l => l !== lang) : [...langs, lang] })
   }
 
-  // Simple document URL input (real upload would use S3/Cloudinary)
   async function handleDocUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
     if (file.size > 5 * 1024 * 1024) { toast.error("File must be under 5MB"); return }
     setUploading(true)
-    // In production: upload to cloud storage and get back URL
-    // For now, store file name as placeholder
     setTimeout(() => {
       setForm(prev => ({ ...prev, licenseDocumentUrl: `uploaded:${file.name}` }))
       toast.success(`Document "${file.name}" uploaded`)
       setUploading(false)
-    }, 800)
+    }, 1500)
   }
 
-  if (loading) return (
-    <div className="flex items-center justify-center min-h-[500px]">
-      <div className="flex flex-col items-center gap-3">
-        <Loader2 className="h-10 w-10 animate-spin text-blue-600" />
-        <p className="text-sm text-muted-foreground">Loading profile…</p>
-      </div>
-    </div>
-  )
+  async function handleAvatarUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 5 * 1024 * 1024) { toast.error("Image must be under 5MB"); return }
+    const url = URL.createObjectURL(file)
+    setImageSrc(url)
+    setCropModalOpen(true)
+    e.target.value = "" // reset
+  }
 
-  if (!profile) return (
-    <div className="p-6 text-center">
-      <p className="text-muted-foreground">Could not load your profile. <button onClick={fetchProfile} className="text-blue-600 underline">Retry</button></p>
+  const onCropComplete = useCallback((_croppedArea: any, croppedAreaPixels: any) => {
+    setCroppedAreaPixels(croppedAreaPixels)
+  }, [])
+
+  const handleCropSave = async () => {
+    if (!imageSrc || !croppedAreaPixels) return
+    setUploading(true)
+    try {
+      const croppedDataUrl = await getCroppedImg(imageSrc, croppedAreaPixels)
+      if (croppedDataUrl) {
+        setForm(prev => ({ ...prev, doctorImageUrl: croppedDataUrl }))
+        setProfile(prev => prev ? ({ ...prev, doctorImageUrl: croppedDataUrl }) : null)
+        toast.success("Profile image updated! Please save changes.")
+      }
+    } catch (e) {
+      toast.error("Failed to crop image")
+    } finally {
+      setUploading(false)
+      setCropModalOpen(false)
+      setImageSrc(null)
+    }
+  }
+
+  if (loading || !profile) return (
+    <div className="flex h-[50vh] flex-col items-center justify-center space-y-4">
+      <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      <p className="text-sm font-medium text-slate-500">Loading profile...</p>
     </div>
   )
 
   const completion = calcCompletion(form)
-  const initials = (profile.fullName || profile.email || "DR").split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2)
-
-  const Field = ({ name, label, required, children, hint }: {
-    name: string; label: string; required?: boolean; children: React.ReactNode; hint?: string
-  }) => (
-    <div className="space-y-1.5">
-      <Label className="text-sm font-medium flex items-center gap-1">
-        {label} {required && <span className="text-red-500">*</span>}
-      </Label>
-      {children}
-      {errors[name] && <p className="text-xs text-red-500 flex items-center gap-1"><AlertCircle className="h-3 w-3" />{errors[name]}</p>}
-      {!errors[name] && hint && <p className="text-xs text-muted-foreground">{hint}</p>}
-    </div>
-  )
+  const initials = (profile.fullName || "Doctor").split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()
 
   return (
     <div className="p-4 sm:p-6 max-w-5xl mx-auto space-y-6">
@@ -229,27 +331,81 @@ export default function DoctorProfilePage() {
       )}
 
       {/* Identity card */}
-      <Card className="overflow-hidden">
-        <div className="h-20 bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-700" />
-        <CardContent className="relative pt-0 px-6 pb-6">
-          <div className="flex items-end gap-4 -mt-10 mb-4">
-            <Avatar className="h-20 w-20 ring-4 ring-white dark:ring-slate-900 shadow-xl">
-              <AvatarImage src={profile.doctorImageUrl || profile.avatarUrl || ""} />
-              <AvatarFallback className="text-2xl font-bold bg-gradient-to-br from-blue-600 to-indigo-700 text-white">{initials}</AvatarFallback>
-            </Avatar>
-            <div className="pb-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-xl font-bold">{profile.fullName ? `Dr. ${profile.fullName}` : "Doctor"}</h1>
-                {profile.isVerified && <Badge className="gap-1 bg-blue-100 text-blue-700 border-blue-200"><BadgeCheck className="h-3 w-3" />Verified</Badge>}
-                {profile.profileComplete && <Badge className="gap-1 bg-emerald-100 text-emerald-700 border-emerald-200"><CheckCircle2 className="h-3 w-3" />Profile Complete</Badge>}
+      <Card className="overflow-hidden border-slate-200 dark:border-slate-800 shadow-sm rounded-xl">
+        <div className="h-28 bg-gradient-to-r from-blue-600 to-violet-600 relative flex items-center justify-center overflow-hidden">
+          <div className="absolute inset-0 opacity-10 bg-[url('/noise.png')] mix-blend-overlay"></div>
+          
+          <div className="absolute top-3 right-4 text-right">
+            <h2 className="text-white/80 font-bold tracking-wider text-[10px] sm:text-xs uppercase">Derma Doctor</h2>
+            <p className="text-white/60 text-[8px] sm:text-[10px] font-medium tracking-wide uppercase">Powered by Derma AI</p>
+          </div>
+
+          <div className="z-10 text-center px-4">
+            <h2 className="text-white font-black tracking-tight text-xl sm:text-2xl md:text-3xl drop-shadow-md">
+              Precision Care, Empowered by AI
+            </h2>
+            <p className="text-blue-100/90 text-xs sm:text-sm md:text-base font-medium mt-1.5 drop-shadow">
+              The future of dermatology works with Derma AI.
+            </p>
+          </div>
+        </div>
+        <CardContent className="relative pt-0 px-8 pb-6">
+          <div className="flex items-center gap-4 -mt-12 mb-6">
+            <div className="relative group">
+              <Avatar className="h-24 w-24 ring-4 ring-white dark:ring-slate-950 bg-white shadow-sm">
+                <AvatarImage src={profile.doctorImageUrl || profile.avatarUrl || undefined} className="object-cover" />
+                <AvatarFallback className="text-3xl font-bold bg-blue-600 text-white">{initials}</AvatarFallback>
+              </Avatar>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button 
+                    className="absolute bottom-0 right-0 bg-white dark:bg-slate-800 p-1.5 rounded-full shadow-md border border-slate-200 dark:border-slate-700 text-blue-600 hover:text-blue-700 transition-colors"
+                    title="Change Profile Picture"
+                  >
+                    <Upload className="h-3 w-3" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => avatarFileRef.current?.click()} className="cursor-pointer">
+                    <Upload className="h-4 w-4 mr-2" /> Upload New Image
+                  </DropdownMenuItem>
+                  {profile.doctorImageUrl && (
+                    <DropdownMenuItem onClick={() => {
+                        setForm(prev => ({ ...prev, doctorImageUrl: null }))
+                        setProfile(prev => prev ? ({ ...prev, doctorImageUrl: null }) : null)
+                        toast.success("Profile image removed! Please save changes.")
+                      }} 
+                      className="cursor-pointer text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-950/50"
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" /> Remove Image
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <input ref={avatarFileRef} type="file" className="hidden" accept="image/*" onChange={handleAvatarUpload} />
+            </div>
+            <div className="mt-14">
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl font-bold text-slate-900 dark:text-white">{profile.fullName ? (profile.fullName.startsWith('Dr.') ? profile.fullName : `Dr. ${profile.fullName}`) : "Doctor"}</h1>
+                {profile.profileComplete && <span className="flex items-center gap-1 text-[11px] font-semibold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full"><CheckCircle2 className="h-3 w-3" /> Profile Complete</span>}
+                {profile.isVerified && <span className="flex items-center gap-1 text-[11px] font-semibold bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full"><BadgeCheck className="h-3 w-3" /> Verified</span>}
               </div>
-              <p className="text-xs text-muted-foreground mt-0.5">{profile.email}</p>
+              <p className="text-sm text-slate-500 mt-0.5">{profile.email}</p>
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-4 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-center">
-            <div><p className="text-2xl font-black">{profile.experienceYears ?? "—"}</p><p className="text-xs text-muted-foreground">Yrs Exp</p></div>
-            <div className="border-x border-slate-200 dark:border-slate-700"><p className="text-2xl font-black">{profile.totalPatients ?? 0}</p><p className="text-xs text-muted-foreground">Patients</p></div>
-            <div><p className="text-2xl font-black">{profile.rating ? `${Number(profile.rating).toFixed(1)}★` : "—"}</p><p className="text-xs text-muted-foreground">Rating</p></div>
+          <div className="grid grid-cols-3 bg-slate-50/50 dark:bg-slate-900/50 rounded-xl border border-slate-100 dark:border-slate-800 py-4">
+            <div className="text-center">
+              <p className="text-2xl font-black text-slate-900 dark:text-white">{profile.experienceYears ?? "—"}</p>
+              <p className="text-xs text-slate-500 font-medium">Yrs Exp</p>
+            </div>
+            <div className="text-center border-x border-slate-200 dark:border-slate-700">
+              <p className="text-2xl font-black text-slate-900 dark:text-white">{stats.totalPatients}</p>
+              <p className="text-xs text-slate-500 font-medium">Patients</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-black text-slate-900 dark:text-white">{stats.rating.toFixed(1)}</p>
+              <p className="text-xs text-slate-500 font-medium">Rating</p>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -259,25 +415,25 @@ export default function DoctorProfilePage() {
         <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Stethoscope className="h-4 w-4 text-blue-600" />Professional Details</CardTitle><CardDescription>Mandatory — patients see these when booking</CardDescription></CardHeader>
         <CardContent className="space-y-5">
           <div className="grid gap-4 md:grid-cols-2">
-            <Field name="specialty" label="Specialty" required>
+            <Field name="specialty" label="Specialty" required errors={errors}>
               <Select value={form.specialty ?? ""} onValueChange={v => setForm({ ...form, specialty: v })}>
                 <SelectTrigger className={errors.specialty ? "border-red-400" : ""}><SelectValue placeholder="Select specialty" /></SelectTrigger>
                 <SelectContent>{SPECIALTIES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
               </Select>
             </Field>
-            <Field name="qualifications" label="Qualifications" required hint="e.g. MBBS, MD Dermatology">
+            <Field name="qualifications" label="Qualifications" required hint="e.g. MBBS, MD Dermatology" errors={errors}>
               <Input placeholder="e.g. MBBS, MD Dermatology" value={form.qualifications ?? ""} onChange={e => setForm({ ...form, qualifications: e.target.value })} className={errors.qualifications ? "border-red-400" : ""} />
             </Field>
-            <Field name="experienceYears" label="Years of Experience" required>
+            <Field name="experienceYears" label="Years of Experience" required errors={errors}>
               <Input type="number" min={0} max={60} placeholder="e.g. 8" value={form.experienceYears ?? ""} onChange={e => setForm({ ...form, experienceYears: Number(e.target.value) })} className={errors.experienceYears ? "border-red-400" : ""} />
             </Field>
-            <Field name="consultationFee" label="Consultation Fee (₹)">
+            <Field name="consultationFee" label="Consultation Fee (₹)" errors={errors}>
               <Input type="number" min={0} placeholder="e.g. 800" value={form.consultationFee ?? ""} onChange={e => setForm({ ...form, consultationFee: Number(e.target.value) })} />
             </Field>
-            <Field name="hospitalName" label="Hospital / Clinic Name" required>
+            <Field name="hospitalName" label="Hospital / Clinic Name" required errors={errors}>
               <Input placeholder="e.g. Apollo Hospital" value={form.hospitalName ?? ""} onChange={e => setForm({ ...form, hospitalName: e.target.value })} className={errors.hospitalName ? "border-red-400" : ""} />
             </Field>
-            <Field name="hospitalAddress" label="Hospital Address" required>
+            <Field name="hospitalAddress" label="Hospital Address" required errors={errors}>
               <Input placeholder="Full address with city" value={form.hospitalAddress ?? ""} onChange={e => setForm({ ...form, hospitalAddress: e.target.value })} className={errors.hospitalAddress ? "border-red-400" : ""} />
             </Field>
           </div>
@@ -312,7 +468,7 @@ export default function DoctorProfilePage() {
             </div>
           </div>
 
-          <Field name="professionalBio" label="Professional Bio" hint="This is visible to patients when they view your profile">
+          <Field name="professionalBio" label="Professional Bio" hint="This is visible to patients when they view your profile" errors={errors}>
             <Textarea rows={3} placeholder="Brief professional summary — specialization, notable achievements, patient-care philosophy…" value={form.professionalBio ?? ""} onChange={e => setForm({ ...form, professionalBio: e.target.value })} />
           </Field>
         </CardContent>
@@ -322,7 +478,7 @@ export default function DoctorProfilePage() {
       <Card className="border-blue-100 dark:border-blue-900/30">
         <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Link2 className="h-4 w-4 text-blue-600" />Consultation Link & License</CardTitle><CardDescription>Mandatory — required before patients can book appointments</CardDescription></CardHeader>
         <CardContent className="space-y-5">
-          <Field name="meetingLink" label="Video Meeting Link" required hint="Google Meet, Zoom, Teams, Jitsi — any valid https:// link">
+          <Field name="meetingLink" label="Video Meeting Link" required hint="Google Meet, Zoom, Teams, Jitsi — any valid https:// link" errors={errors}>
             <div className="relative">
               <Link2 className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
@@ -340,7 +496,7 @@ export default function DoctorProfilePage() {
           </Field>
 
           <div className="grid gap-4 md:grid-cols-2">
-            <Field name="licenseNumber" label="Medical License Number" required hint="As registered with Medical Council of India or state board">
+            <Field name="licenseNumber" label="Medical License Number" required hint="As registered with Medical Council of India or state board" errors={errors}>
               <div className="relative">
                 <ShieldCheck className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input placeholder="e.g. MCI-12345-2015" value={form.licenseNumber ?? ""} onChange={e => setForm({ ...form, licenseNumber: e.target.value })} className={`pl-9 ${errors.licenseNumber ? "border-red-400" : ""}`} />
@@ -372,32 +528,57 @@ export default function DoctorProfilePage() {
         <CardHeader><CardTitle className="flex items-center gap-2 text-base"><User className="h-4 w-4 text-indigo-600" />Contact Information</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2">
-            <Field name="contactNumber" label="Mobile Number" required hint="Patients may call you at this number">
+            <Field name="contactNumber" label="Mobile Number" required hint="Patients may call you at this number" errors={errors}>
               <div className="relative">
                 <Phone className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input type="tel" placeholder="+91 98765 43210" value={form.contactNumber ?? ""} onChange={e => setForm({ ...form, contactNumber: e.target.value })} className={`pl-9 ${errors.contactNumber ? "border-red-400" : ""}`} />
               </div>
             </Field>
-            <Field name="gender" label="Gender">
+            <Field name="gender" label="Gender" required errors={errors}>
               <Select value={form.gender ?? ""} onValueChange={v => setForm({ ...form, gender: v })}>
-                <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                <SelectTrigger className={errors.gender ? "border-red-400" : ""}><SelectValue placeholder="Select" /></SelectTrigger>
                 <SelectContent>
                   {["Male","Female","Other","Prefer not to say"].map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}
                 </SelectContent>
               </Select>
             </Field>
-            <Field name="city" label="City">
-              <Input value={form.city ?? ""} onChange={e => setForm({ ...form, city: e.target.value })} placeholder="e.g. Mumbai" />
+            <Field name="country" label="Country" required errors={errors}>
+              <Select value={form.country ?? ""} onValueChange={v => setForm({ ...form, country: v, state: "", city: "" })}>
+                <SelectTrigger className={errors.country ? "border-red-400" : ""}><SelectValue placeholder="Select Country" /></SelectTrigger>
+                <SelectContent>
+                  {Country.getAllCountries().map(c => <SelectItem key={c.isoCode} value={c.name}>{c.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </Field>
-            <Field name="state" label="State">
-              <Input value={form.state ?? ""} onChange={e => setForm({ ...form, state: e.target.value })} placeholder="e.g. Maharashtra" />
+            <Field name="state" label="State" required errors={errors}>
+              <Select disabled={!form.country} value={form.state ?? ""} onValueChange={v => setForm({ ...form, state: v, city: "" })}>
+                <SelectTrigger className={errors.state ? "border-red-400" : ""}><SelectValue placeholder="Select State" /></SelectTrigger>
+                <SelectContent>
+                  {(() => {
+                    const c = Country.getAllCountries().find(c => c.name === form.country)
+                    return c ? State.getStatesOfCountry(c.isoCode).map(s => <SelectItem key={s.isoCode} value={s.name}>{s.name}</SelectItem>) : null
+                  })()}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field name="city" label="City" required errors={errors}>
+              <Select disabled={!form.state} value={form.city ?? ""} onValueChange={v => setForm({ ...form, city: v })}>
+                <SelectTrigger className={errors.city ? "border-red-400" : ""}><SelectValue placeholder="Select City" /></SelectTrigger>
+                <SelectContent>
+                  {(() => {
+                    const c = Country.getAllCountries().find(c => c.name === form.country)
+                    const s = c ? State.getStatesOfCountry(c.isoCode).find(s => s.name === form.state) : null
+                    return s ? City.getCitiesOfState(c.isoCode, s.isoCode).map(city => <SelectItem key={city.name} value={city.name}>{city.name}</SelectItem>) : null
+                  })()}
+                </SelectContent>
+              </Select>
             </Field>
             <div className="space-y-1.5 md:col-span-2">
               <Label className="text-sm font-medium">Clinic / Home Address</Label>
               <Input value={form.address ?? ""} onChange={e => setForm({ ...form, address: e.target.value })} placeholder="Your personal address (optional)" />
             </div>
           </div>
-          <Field name="bio" label="Personal Note">
+          <Field name="bio" label="Personal Note" errors={errors}>
             <Textarea rows={2} placeholder="Any personal note for patients…" value={form.bio ?? ""} onChange={e => setForm({ ...form, bio: e.target.value })} />
           </Field>
         </CardContent>
@@ -419,6 +600,45 @@ export default function DoctorProfilePage() {
         </div>
       </div>
 
+      <Dialog open={cropModalOpen} onOpenChange={(open) => !open && setCropModalOpen(false)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Crop Profile Picture</DialogTitle>
+          </DialogHeader>
+          {imageSrc && (
+            <div className="space-y-4">
+              <div className="relative h-64 w-full bg-slate-900 rounded-xl overflow-hidden">
+                <Cropper
+                  image={imageSrc}
+                  crop={crop}
+                  zoom={zoom}
+                  aspect={1}
+                  cropShape="round"
+                  onCropChange={setCrop}
+                  onCropComplete={onCropComplete}
+                  onZoomChange={setZoom}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs">Zoom</Label>
+                <Slider
+                  value={[zoom]}
+                  min={1}
+                  max={3}
+                  step={0.1}
+                  onValueChange={(v) => setZoom(v[0])}
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCropModalOpen(false)}>Cancel</Button>
+            <Button onClick={handleCropSave} className="bg-blue-600 hover:bg-blue-700 text-white">
+              {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Image"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

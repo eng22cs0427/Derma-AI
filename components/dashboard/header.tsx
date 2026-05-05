@@ -7,7 +7,6 @@ import { Bell, Search, Calendar, Info, CheckCircle2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { ThemeToggle } from "@/components/theme-toggle"
 import { Input } from "@/components/ui/input"
 import { UserButton } from "@clerk/nextjs"
 import { cn } from "@/lib/utils"
@@ -90,7 +89,6 @@ export function DashboardHeader({ user }: { user: PlainUser | null }) {
           </form>
         </div>
         <div className="flex flex-1 items-center justify-end space-x-4">
-          <ThemeToggle />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="relative">

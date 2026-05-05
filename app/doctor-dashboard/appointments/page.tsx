@@ -272,8 +272,37 @@ export default function DoctorAppointmentsPage() {
       if (!res.ok) return
       const data: SlotInfo[] = await res.json()
       const grouped: Record<string, SlotInfo[]> = {}
+      const todayDate = new Date()
+      const todayStr = `${todayDate.getFullYear()}-${String(todayDate.getMonth()+1).padStart(2,"0")}-${String(todayDate.getDate()).padStart(2,"0")}`
+      const currentHour = todayDate.getHours()
+      const currentMin = todayDate.getMinutes()
+
       for (const s of data) {
         const d = (s as any).date
+        
+        // Filter out past slots if today
+        if (d === todayStr) {
+          const match = s.timeSlot.match(/(\d+):(\d+)\s*(AM|PM)/i)
+          let h = 0, m = 0
+          if (match) {
+            h = parseInt(match[1], 10)
+            m = parseInt(match[2], 10)
+            const ampm = match[3].toUpperCase()
+            if (ampm === 'PM' && h < 12) h += 12
+            if (ampm === 'AM' && h === 12) h = 0
+          } else {
+            const parts = s.timeSlot.split(':')
+            if (parts.length >= 2) {
+              h = parseInt(parts[0], 10)
+              m = parseInt(parts[1], 10)
+            }
+          }
+          if (h < currentHour || (h === currentHour && m <= currentMin)) {
+             // Skip past slots for today
+             continue
+          }
+        }
+
         if (!grouped[d]) grouped[d] = []
         grouped[d].push(s)
       }
@@ -492,6 +521,22 @@ export default function DoctorAppointmentsPage() {
                   <div className="flex flex-wrap gap-1.5">
                     {ALL_SLOTS.map(s => {
                       const isSelected = draftSlots.includes(s.value)
+                      
+                      // Check if past slot for today
+                      const isToday = selectedDate === todayISO
+                      let isPast = false
+                      if (isToday) {
+                        const [hStr, mStr] = s.value.split(':')
+                        const h = parseInt(hStr, 10)
+                        const m = parseInt(mStr, 10)
+                        const now = new Date()
+                        if (h < now.getHours() || (h === now.getHours() && m <= now.getMinutes())) {
+                          isPast = true
+                        }
+                      }
+
+                      if (isPast) return null; // Don't show past slots for editing
+
                       return (
                         <button
                           key={s.value}

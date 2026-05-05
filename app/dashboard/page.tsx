@@ -12,6 +12,7 @@ import {
   Stethoscope,
   ChevronLeft,
   ChevronRight,
+  Ticket,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -81,6 +82,14 @@ const features = [
     //   iconColor: "text-red-500",
     // },
 
+    {
+      title: "My Skin Tickets",
+      description: "View and manage your active support tickets",
+      icon: Ticket,
+      href: "/dashboard/skin-tickets",
+      color: "bg-purple-100",
+      iconColor: "text-purple-500",
+    },
     {
       title: "Medical Shop",
       description: "Purchase recommended medical supplies and products",

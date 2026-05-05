@@ -1,56 +1,67 @@
+"use client"
 import type React from "react"
-import { redirect } from "next/navigation"
-import { currentUser } from "@clerk/nextjs/server"
+import { useState, useEffect } from "react"
+import { useUser } from "@clerk/nextjs"
+import { useRouter } from "next/navigation"
 
 import { DashboardHeader } from "@/components/dashboard/header"
 import { DashboardSidebar } from "@/components/dashboard/sidebar"
-import { ensureUserProfileExists } from "@/lib/profile-sync"
 import { ProfileProvider } from "@/contexts/ProfileContext"
+import { cn } from "@/lib/utils"
 
-export default async function DashboardLayout({
+export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const user = await currentUser()
+  const { user, isLoaded } = useUser()
+  const router = useRouter()
+  const [isCollapsed, setIsCollapsed] = useState(false)
+  const [dbProfile, setDbProfile] = useState<any>(null)
 
-  if (!user) {
-    redirect("/login")
-  }
+  useEffect(() => {
+    if (!isLoaded) return
+    if (!user) {
+      router.push("/login")
+      return
+    }
 
-  // Retrieve basic info from Clerk profile
+    const primaryEmail = user.emailAddresses?.find(
+      (e) => e.id === user.primaryEmailAddressId
+    )?.emailAddress || user.emailAddresses?.[0]?.emailAddress || "no-email@example.com"
+
+    const fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || primaryEmail.split('@')[0]
+
+    fetch('/api/profile/sync', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ userId: user.id, email: primaryEmail, fullName }),
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (!data.profile?.isOnboarded) {
+          router.push("/onboarding")
+        } else if (data.profile?.role === "doctor") {
+          router.push("/doctor-dashboard")
+        } else {
+          setDbProfile(data.profile)
+        }
+      })
+      .catch(err => console.error("Failed to sync profile:", err))
+  }, [user, isLoaded, router])
+
+  if (!isLoaded || !user) return null
+
   const primaryEmail = user.emailAddresses?.find(
     (e) => e.id === user.primaryEmailAddressId
   )?.emailAddress || user.emailAddresses?.[0]?.emailAddress || "no-email@example.com"
 
-  const fullName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || primaryEmail.split('@')[0]
-
-  let isOnboarded = false
-  let dbProfile = null
-
-  try {
-    // 1. Ensure user exists inside AWS RDS Postgres database
-    dbProfile = await ensureUserProfileExists(user.id, primaryEmail, fullName)
-    isOnboarded = Boolean(dbProfile.isOnboarded)
-  } catch (error) {
-    console.error("Failed to sync profile to database inside layout:", error)
-  }
-
-  // 2. Gatekeeping Onboarding System
-  // Next.js redirect must be called outside try/catch blocks!
-  if (!isOnboarded) {
-    redirect("/onboarding")
-  }
-
-  // 3. Force auto-redirect doctors who arrive at the patient dashboard
-  if (dbProfile?.role === "doctor") {
-    redirect("/doctor-dashboard")
-  }
-
   return (
     <div className="min-h-screen bg-background">
-      <DashboardSidebar isAdmin={dbProfile?.role === "admin"} />
-      <div className="lg:pl-64">
+      <DashboardSidebar isAdmin={dbProfile?.role === "admin"} isCollapsed={isCollapsed} onToggleCollapse={() => setIsCollapsed(!isCollapsed)} />
+      <div className={cn("transition-all duration-300", isCollapsed ? "lg:pl-[70px]" : "lg:pl-64")}>
         <DashboardHeader user={{
           id: user.id,
           firstName: user.firstName ?? null,

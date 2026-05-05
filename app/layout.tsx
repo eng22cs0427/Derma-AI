@@ -6,6 +6,7 @@ import { WishlistProvider } from "@/components/shop/wishlist-context";
 import { CartProvider } from "@/contexts/cart-context";
 import { ClerkProvider } from '@clerk/nextjs';
 import { Toaster } from "sonner";
+import { PageLoader } from "@/components/ui/page-loader";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -30,6 +31,7 @@ export default function RootLayout({
             <WishlistProvider>
               <CartProvider>
                 <Suspense fallback={null}>
+                  <PageLoader />
                   <ToastListener />
                 </Suspense>
                 {children}

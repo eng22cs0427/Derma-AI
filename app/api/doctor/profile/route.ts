@@ -29,6 +29,9 @@ interface IDoctorProfile extends IProfile {
 // These fields must be filled before the doctor can access the dashboard
 const MANDATORY_FIELDS: (keyof IDoctorProfile)[] = [
   'contactNumber',
+  'country',
+  'city',
+  'state',
   'specialty',
   'qualifications',
   'experienceYears',

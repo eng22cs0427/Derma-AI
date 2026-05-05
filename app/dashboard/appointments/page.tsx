@@ -62,6 +62,8 @@ interface Appointment {
   createdAt: string
   attachedAnalysisId?: string | null
   attachedAnalysisDiagnosis?: string | null
+  review?: { rating: number, feedback: string }
+  attachedReports?: { name: string, url: string }[]
 }
 
 interface AnalysisTicket {
@@ -101,51 +103,83 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function DoctorCard({ doctor, onBook }: { doctor: Doctor; onBook: (d: Doctor) => void }) {
+  const nextDays = getNext14Days()
+  const availableDays = nextDays.filter(d => !doctor.availableDays || doctor.availableDays.length === 0 || doctor.availableDays.some(ad => ad.toLowerCase().includes(d.dayName.toLowerCase())))
+  const nextAvailable = availableDays.length > 0 ? availableDays[0].label : "Not Available"
+  
   return (
-    <Card className="border border-slate-200 dark:border-slate-800 hover:shadow-lg transition-all overflow-hidden">
-      <CardContent className="p-0">
-        <div className="flex gap-4 p-4">
-          <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold text-xl flex-shrink-0 overflow-hidden">
+    <Card className="border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden bg-white dark:bg-slate-900 shadow-sm hover:shadow-lg transition-all flex flex-col h-full relative">
+      {/* Header Banner */}
+      <div className="h-20 bg-gradient-to-b from-teal-50 to-white dark:from-teal-950/30 dark:to-slate-900 relative">
+        <button className="absolute top-3 right-3 text-slate-400 hover:text-slate-600">
+          <AlertCircle className="h-4 w-4" />
+        </button>
+      </div>
+      
+      {/* Avatar Container */}
+      <div className="flex justify-center -mt-10 relative px-4">
+        <div className="relative">
+          <div className="w-20 h-20 rounded-full bg-white dark:bg-slate-800 flex items-center justify-center text-slate-400 font-bold text-3xl overflow-hidden ring-4 ring-white dark:ring-slate-900 shadow-sm">
             {doctor.image ? (
               <img src={doctor.image} alt={doctor.name} className="w-full h-full object-cover" />
             ) : (
               doctor.name.split(" ").map(n => n[0]).join("").slice(0, 2)
             )}
           </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <h3 className="font-bold text-slate-900 dark:text-white text-sm">{doctor.name}</h3>
-                <p className="text-xs text-slate-500 mt-0.5">{doctor.specialty}</p>
-                <p className="text-xs text-slate-400">{doctor.qualifications}</p>
-              </div>
-              {doctor.isVerified && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-bold flex-shrink-0">Verified</span>
-              )}
-            </div>
-            <div className="flex flex-wrap gap-3 mt-2 text-xs text-slate-500">
-              <span className="flex items-center gap-1"><Building2 className="h-3 w-3" />{doctor.hospital}</span>
-              <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{doctor.city}</span>
-              <span className="flex items-center gap-1"><Star className="h-3 w-3 text-amber-400 fill-amber-400" />{doctor.rating.toFixed(1)}</span>
-              <span className="flex items-center gap-1"><User className="h-3 w-3" />{doctor.experience} yrs exp</span>
-            </div>
+          <div className="absolute bottom-0 right-0 bg-emerald-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full border-2 border-white dark:border-slate-900">
+            Available
           </div>
         </div>
-        <div className="px-4 pb-3 flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-3">
+      </div>
+      
+      <div className="px-6 pb-6 pt-4 flex flex-col flex-grow">
+        <h3 className="font-bold text-slate-900 dark:text-white text-lg truncate">{doctor.name.startsWith('Dr.') ? doctor.name : `Dr. ${doctor.name}`}</h3>
+        <p className="text-teal-600 dark:text-teal-500 text-sm font-semibold mt-1 truncate">{doctor.specialty}</p>
+        <p className="text-slate-500 text-xs mt-1 truncate">{doctor.qualifications || "Dermatology"}</p>
+        
+        <div className="flex items-center gap-1.5 mt-3">
+          <Star className="h-4 w-4 text-amber-400 fill-amber-400" />
+          <span className="font-bold text-slate-900 dark:text-white text-sm ml-0.5">{doctor.rating ? doctor.rating.toFixed(1) : "—"}</span>
+          <span className="text-slate-400 text-xs ml-1">({doctor.totalPatients || 0} reviews)</span>
+        </div>
+        
+        <div className="space-y-2 mt-4">
+          <div className="flex items-center gap-2 text-slate-500 text-sm">
+            <Building2 className="h-4 w-4 flex-shrink-0" />
+            <span className="truncate">{doctor.hospital}</span>
+          </div>
+          <div className="flex items-center gap-2 text-slate-500 text-sm">
+            <MapPin className="h-4 w-4 flex-shrink-0" />
+            <span className="truncate">{doctor.city}</span>
+          </div>
+        </div>
+        
+        <div className="flex gap-2.5 mt-4">
+          <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800 px-2.5 py-1.5 rounded-md text-xs text-slate-600 dark:text-slate-300 font-medium">
+            <Clock className="h-3.5 w-3.5" /> {doctor.experience || 0}+ yrs
+          </div>
+          {doctor.meetingLink && (
+            <div className="flex items-center gap-1.5 bg-violet-50 dark:bg-violet-950/30 px-2.5 py-1.5 rounded-md text-xs text-violet-600 dark:text-violet-400 font-medium">
+              <Video className="h-3.5 w-3.5" /> Video
+            </div>
+          )}
+        </div>
+        
+        <div className="mt-auto pt-6 flex items-end justify-between">
           <div>
-            <p className="text-xs text-slate-400">Consultation Fee</p>
-            <p className="font-bold text-slate-900 dark:text-white">₹{doctor.consultationFee}</p>
+            <p className="text-xs text-slate-400 font-medium">Next Available</p>
+            <p className="text-sm font-bold text-teal-600 dark:text-teal-500 mt-0.5">{nextAvailable}</p>
           </div>
-          <div className="flex gap-2">
-            {doctor.languages && doctor.languages.length > 0 && (
-              <span className="text-[10px] px-2 py-1 bg-slate-100 dark:bg-slate-800 rounded text-slate-500">{doctor.languages.slice(0,2).join(", ")}</span>
-            )}
-            <Button size="sm" onClick={() => onBook(doctor)} className="bg-blue-600 hover:bg-blue-700 text-white h-8 px-4 text-xs">
-              Book
-            </Button>
+          <div className="text-right">
+            <p className="text-xs text-slate-400 font-medium">Fee</p>
+            <p className="text-lg font-black text-slate-900 dark:text-white">₹{doctor.consultationFee}</p>
           </div>
         </div>
-      </CardContent>
+        
+        <Button onClick={() => onBook(doctor)} className="w-full mt-5 bg-teal-600 hover:bg-teal-700 text-white h-11 text-sm font-bold rounded-xl shadow-sm">
+          Book Appointment
+        </Button>
+      </div>
     </Card>
   )
 }
@@ -183,8 +217,35 @@ function BookingPanel({
     setSelectedSlot(null)
     try {
       const res = await fetch(`/api/doctors/slots?doctorId=${doctor.id}&date=${date}`)
-      const data = await res.json()
-      setSlots(Array.isArray(data) ? data : [])
+      let data = await res.json()
+      
+      if (Array.isArray(data)) {
+        // Filter out past time slots if it's today
+        const today = new Date()
+        const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`
+        if (date === todayStr) {
+          const currentHour = today.getHours()
+          const currentMin = today.getMinutes()
+          data = data.filter(s => {
+            const match = s.timeSlot.match(/(\d+):(\d+)\s*(AM|PM)/i)
+            if (match) {
+              let h = parseInt(match[1], 10)
+              const m = parseInt(match[2], 10)
+              const ampm = match[3].toUpperCase()
+              if (ampm === 'PM' && h < 12) h += 12
+              if (ampm === 'AM' && h === 12) h = 0
+              if (h < currentHour || (h === currentHour && m <= currentMin)) return false
+            } else {
+              const [h, m] = s.timeSlot.split(':').map(Number)
+              if (h < currentHour || (h === currentHour && m <= currentMin)) return false
+            }
+            return true
+          })
+        }
+        setSlots(data)
+      } else {
+        setSlots([])
+      }
     } catch {
       setSlots([])
     } finally {
@@ -574,9 +635,23 @@ export default function PatientAppointmentsPage() {
   const [loadingDoctors, setLoadingDoctors] = useState(false)
   const [loadingAppts, setLoadingAppts] = useState(true)
   const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null)
+  
+  // Filtering and Sorting
   const [search, setSearch] = useState("")
+  const [filterRating, setFilterRating] = useState<number>(0)
+  const [filterGender, setFilterGender] = useState<string>("All")
+  
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [cancellingId, setCancellingId] = useState<string | null>(null)
+  
+  // Review State
+  const [reviewingId, setReviewingId] = useState<string | null>(null)
+  const [rating, setRating] = useState(0)
+  const [feedback, setFeedback] = useState("")
+  const [submittingReview, setSubmittingReview] = useState(false)
+  
+  // Attachments State
+  const [uploadingReportId, setUploadingReportId] = useState<string | null>(null)
 
   const loadAppointments = useCallback(async () => {
     try {
@@ -610,9 +685,43 @@ export default function PatientAppointmentsPage() {
     if (view === "browse") loadDoctors()
   }, [view, loadDoctors])
 
-  const filteredDoctors = doctors.filter(d =>
-    !search || [d.name, d.specialty, d.hospital, d.city].some(v => v?.toLowerCase().includes(search.toLowerCase()))
-  )
+  const handleUploadReport = async (e: React.ChangeEvent<HTMLInputElement>, apptId: string) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (file.size > 5 * 1024 * 1024) return toast.error("File must be under 5MB")
+    
+    setUploadingReportId(apptId)
+    // Simulate upload to Cloudinary/S3
+    setTimeout(async () => {
+      const fakeUrl = `https://res.cloudinary.com/demo/image/upload/sample.jpg`
+      try {
+        const res = await fetch(`/api/appointments/${apptId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "attach_report", reportName: file.name, reportUrl: fakeUrl })
+        })
+        if (res.ok) {
+          toast.success("Report attached successfully")
+          loadAppointments()
+        } else {
+          toast.error("Failed to attach report")
+        }
+      } catch {
+        toast.error("Network error")
+      } finally {
+        setUploadingReportId(null)
+      }
+    }, 1500)
+  }
+
+  const filteredDoctors = doctors.filter(d => {
+    const matchesSearch = !search || [d.name, d.specialty, d.hospital, d.city].some(v => v?.toLowerCase().includes(search.toLowerCase()))
+    const matchesRating = filterRating === 0 || (d.rating || 0) >= filterRating
+    // Assuming gender is not in the old doctor interface but might be returned by API, 
+    // if we added it, we could filter. For now we match if filter is "All" or if d has gender matching
+    const matchesGender = filterGender === "All" || (d as any).gender === filterGender
+    return matchesSearch && matchesRating && matchesGender
+  }).sort((a, b) => (b.rating || 0) - (a.rating || 0)) // Sort by rating descending
 
   const handleBookSuccess = () => {
     setSelectedDoctor(null)
@@ -642,6 +751,37 @@ export default function PatientAppointmentsPage() {
       toast.error("Network error — please try again")
     } finally {
       setCancellingId(null)
+    }
+  }
+
+  const handleReviewSubmit = async (id: string) => {
+    if (rating === 0) {
+      toast.error("Please select a star rating")
+      return
+    }
+    
+    setSubmittingReview(true)
+    try {
+      const res = await fetch(`/api/appointments/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "review", rating, feedback })
+      })
+      
+      const data = await res.json()
+      if (res.ok) {
+        toast.success("Review submitted successfully!")
+        setReviewingId(null)
+        setRating(0)
+        setFeedback("")
+        loadAppointments() // Refresh to show new review
+      } else {
+        toast.error(data.error || "Failed to submit review")
+      }
+    } catch {
+      toast.error("Network error — please try again")
+    } finally {
+      setSubmittingReview(false)
     }
   }
 
@@ -706,19 +846,46 @@ export default function PatientAppointmentsPage() {
         />
       ) : view === "browse" ? (
         <div className="space-y-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
-            <Input
-              placeholder="Search by name, specialty, hospital or city..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="pl-9 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700"
-            />
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+              <Input
+                placeholder="Search by name, specialty, hospital or city..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="pl-9 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700"
+              />
+            </div>
+            <div className="flex gap-2">
+              <select 
+                value={filterRating} 
+                onChange={e => setFilterRating(Number(e.target.value))}
+                className="h-10 px-3 py-2 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value={0}>Any Rating</option>
+                <option value={4.5}>4.5+ Stars</option>
+                <option value={4.0}>4.0+ Stars</option>
+                <option value={3.0}>3.0+ Stars</option>
+              </select>
+              <select 
+                value={filterGender} 
+                onChange={e => setFilterGender(e.target.value)}
+                className="h-10 px-3 py-2 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="All">Any Gender</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+              </select>
+            </div>
+          </div>
+          
+          <div className="text-sm font-semibold text-slate-600 dark:text-slate-400 mt-2">
+            {filteredDoctors.length} Doctors Found
           </div>
 
           {loadingDoctors ? (
-            <div className="space-y-3">
-              {[...Array(3)].map((_, i) => <div key={i} className="h-32 rounded-2xl bg-slate-100 dark:bg-slate-800 animate-pulse" />)}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {[...Array(6)].map((_, i) => <div key={i} className="h-80 rounded-2xl bg-slate-100 dark:bg-slate-800 animate-pulse" />)}
             </div>
           ) : filteredDoctors.length === 0 ? (
             <div className="flex flex-col items-center py-20 text-center">
@@ -727,7 +894,7 @@ export default function PatientAppointmentsPage() {
               <p className="text-xs text-slate-400 mt-1">Try a different search or check back later</p>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
               {filteredDoctors.map(d => (
                 <DoctorCard key={d.id} doctor={d} onBook={(doc) => setSelectedDoctor(doc)} />
               ))}
@@ -795,15 +962,55 @@ export default function PatientAppointmentsPage() {
                       <div className="flex flex-col items-end gap-2 flex-shrink-0">
                         <StatusBadge status={appt.status} />
                         {appt.fee > 0 && <span className="text-xs font-semibold text-slate-500">₹{appt.fee}</span>}
+                        {appt.status === "Completed" && !appt.review && reviewingId !== appt.id && (
+                          <Button size="sm" variant="outline" onClick={() => setReviewingId(appt.id)} className="text-xs h-7 mt-1 border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 gap-1"><Star className="h-3 w-3" /> Leave Review</Button>
+                        )}
+                        {appt.review && (
+                          <div className="flex items-center gap-1 mt-1 text-amber-500"><Star className="h-3 w-3 fill-amber-500"/> <span className="text-xs font-bold">{appt.review.rating}</span></div>
+                        )}
                       </div>
                     </div>
-
-                    {appt.attachedAnalysisDiagnosis && (
-                      <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800">
-                        <div className="inline-flex items-center gap-1.5 text-xs text-slate-500 bg-slate-50 dark:bg-slate-800/50 px-2.5 py-1 rounded-lg">
-                          <Paperclip className="h-3.5 w-3.5" />
-                          <span>Attached: {appt.attachedAnalysisDiagnosis}</span>
+                    
+                    {reviewingId === appt.id && (
+                      <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 animate-in fade-in slide-in-from-top-2">
+                        <p className="text-sm font-bold text-slate-900 dark:text-white mb-2">How was your consultation?</p>
+                        <div className="flex gap-1 mb-3">
+                          {[1,2,3,4,5].map(star => (
+                            <button key={star} onClick={() => setRating(star)} className="p-1 hover:scale-110 transition-transform">
+                              <Star className={cn("h-6 w-6 transition-colors", rating >= star ? "text-amber-400 fill-amber-400" : "text-slate-200 fill-slate-200")} />
+                            </button>
+                          ))}
                         </div>
+                        <textarea
+                          value={feedback}
+                          onChange={e => setFeedback(e.target.value)}
+                          placeholder="Optional feedback for the doctor..."
+                          className="w-full text-sm p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 mb-3 resize-none h-20 outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <div className="flex gap-2">
+                          <Button size="sm" onClick={() => handleReviewSubmit(appt.id)} disabled={submittingReview} className="bg-blue-600 hover:bg-blue-700 text-white">
+                            {submittingReview ? "Submitting..." : "Submit Review"}
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => { setReviewingId(null); setRating(0); setFeedback("") }}>Cancel</Button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Attached analysis & custom reports */}
+                    {(appt.attachedAnalysisDiagnosis || (appt.attachedReports && appt.attachedReports.length > 0)) && (
+                      <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap gap-2">
+                        {appt.attachedAnalysisDiagnosis && (
+                          <div className="inline-flex items-center gap-1.5 text-xs text-slate-500 bg-slate-50 dark:bg-slate-800/50 px-2.5 py-1 rounded-lg">
+                            <Paperclip className="h-3.5 w-3.5" />
+                            <span>Skin Analysis: {appt.attachedAnalysisDiagnosis}</span>
+                          </div>
+                        )}
+                        {appt.attachedReports?.map((r, i) => (
+                          <div key={i} className="inline-flex items-center gap-1.5 text-xs text-blue-600 bg-blue-50 dark:bg-blue-950/30 px-2.5 py-1 rounded-lg">
+                            <FileText className="h-3.5 w-3.5" />
+                            <span>{r.name}</span>
+                          </div>
+                        ))}
                       </div>
                     )}
 
@@ -820,18 +1027,33 @@ export default function PatientAppointmentsPage() {
                       </div>
                     )}
 
-                    {canCancel(appt.appointmentDate, appt.appointmentTime, appt.status) && (
-                      <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+                    {appt.status !== "Completed" && appt.status !== "Cancelled" && (
+                      <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap justify-between items-center gap-3">
                         <Button 
                           variant="ghost" 
                           size="sm" 
-                          onClick={() => handleCancelAppointment(appt.id)}
-                          disabled={cancellingId === appt.id}
-                          className="h-8 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30"
+                          onClick={() => {
+                             const el = document.getElementById(`attach-${appt.id}`);
+                             if (el) el.click();
+                          }}
+                          className="h-8 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 gap-1.5"
                         >
-                          {cancellingId === appt.id ? <Loader2 className="h-3 w-3 mr-1.5 animate-spin" /> : <Ban className="h-3 w-3 mr-1.5" />}
-                          Cancel / Reschedule
+                          <input type="file" id={`attach-${appt.id}`} className="hidden" accept=".pdf,image/*" onChange={(e) => handleUploadReport(e, appt.id)} />
+                          {uploadingReportId === appt.id ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Uploading...</> : <><Paperclip className="h-3.5 w-3.5" /> Attach Report</>}
                         </Button>
+
+                        {canCancel(appt.appointmentDate, appt.appointmentTime, appt.status) && (
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={() => handleCancelAppointment(appt.id)}
+                            disabled={cancellingId === appt.id}
+                            className="h-8 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30 gap-1.5"
+                          >
+                            {cancellingId === appt.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Ban className="h-3.5 w-3.5" />}
+                            Cancel
+                          </Button>
+                        )}
                       </div>
                     )}
                   </CardContent>

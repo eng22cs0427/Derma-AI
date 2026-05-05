@@ -26,7 +26,6 @@ import {
 import { UserButton } from "@clerk/nextjs"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { ThemeToggle } from "@/components/theme-toggle"
 import { cn } from "@/lib/utils"
 
 const navItems = [
@@ -262,7 +261,6 @@ export function DoctorShell({ children, isAdmin = false }: { children: React.Rea
           </div>
 
           <div className="ml-auto flex items-center gap-3">
-            <ThemeToggle />
 
             {/* ── Notification Bell ─────────────────── */}
             <div className="relative" ref={notifRef}>

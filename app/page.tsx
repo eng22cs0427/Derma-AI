@@ -2,9 +2,8 @@ import Link from "next/link"
 import Image from "next/image"
 import { auth } from "@clerk/nextjs/server"
 import { ArrowRight, Activity } from "lucide-react"
-
+import { UserButton } from "@clerk/nextjs"
 import { Button } from "@/components/ui/button"
-import { ThemeToggle } from "@/components/theme-toggle"
 import { SlidingText } from "@/components/home/sliding-text"
 
 export default async function Home() {
@@ -41,17 +40,14 @@ export default async function Home() {
 
       {/* ── Right Side: Content & Action ────────────────────────────────────────── */}
       <div className="relative flex w-full flex-col justify-between lg:w-1/2">
-        {/* Header with Theme Toggle */}
-        <header className="flex h-20 items-center justify-end px-6 sm:px-10">
-          <ThemeToggle />
-        </header>
+
 
         {/* Main Content Area */}
         <main className="flex-1 flex flex-col justify-center px-6 sm:px-10 lg:px-16 pb-20">
           <div className="w-full max-w-lg mx-auto lg:mx-0 space-y-8">
             
             {/* Logo Group */}
-            <div className="flex items-center gap-3">
+            <div className="hidden md:flex items-center gap-4">
               <div className="flex h-12 w-12 sm:h-14 sm:w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 shadow-xl shadow-blue-500/20">
                 <Activity className="h-6 w-6 sm:h-7 sm:w-7 text-white" />
               </div>

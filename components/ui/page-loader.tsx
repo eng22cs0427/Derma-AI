@@ -1,51 +1,38 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { usePathname } from "next/navigation"
-import { motion, AnimatePresence } from "framer-motion"
+import { usePathname, useSearchParams } from "next/navigation"
+import { Activity } from "lucide-react"
 
 export function PageLoader() {
   const [isLoading, setIsLoading] = useState(false)
   const pathname = usePathname()
+  const searchParams = useSearchParams()
 
   useEffect(() => {
     setIsLoading(true)
-    const timer = setTimeout(() => setIsLoading(false), 800)
+    const timer = setTimeout(() => setIsLoading(false), 600)
     return () => clearTimeout(timer)
-  }, [pathname])
+  }, [pathname, searchParams])
+
+  if (!isLoading) return null
 
   return (
-    <AnimatePresence>
-      {isLoading && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm"
-        >
-          <div className="flex flex-col items-center space-y-4">
-            <div className="relative">
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 1, repeat: Number.POSITIVE_INFINITY, ease: "linear" }}
-                className="w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full"
-              />
-              <motion.div
-                animate={{ scale: [1, 1.2, 1] }}
-                transition={{ duration: 2, repeat: Number.POSITIVE_INFINITY }}
-                className="absolute inset-0 w-12 h-12 border-2 border-primary/40 rounded-full"
-              />
-            </div>
-            <motion.p
-              animate={{ opacity: [0.5, 1, 0.5] }}
-              transition={{ duration: 1.5, repeat: Number.POSITIVE_INFINITY }}
-              className="text-sm text-muted-foreground font-medium"
-            >
-              Loading...
-            </motion.p>
-          </div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-background/90 backdrop-blur-sm transition-opacity duration-300">
+      {/* Spinning DermaAI logo */}
+      <div className="relative flex items-center justify-center">
+        {/* Outer ring */}
+        <div className="absolute h-20 w-20 rounded-full border-4 border-primary/20" />
+        {/* Spinning arc */}
+        <div className="absolute h-20 w-20 rounded-full border-4 border-transparent border-t-primary animate-spin" />
+        {/* Icon in centre */}
+        <div className="relative z-10 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+          <Activity className="h-6 w-6 text-primary" />
+        </div>
+      </div>
+      <p className="mt-5 text-sm font-semibold tracking-widest text-primary/80 animate-pulse">
+        DERMA AI
+      </p>
+    </div>
   )
 }
